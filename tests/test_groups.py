@@ -5,7 +5,7 @@ from datetime import date, datetime, time
 from pathlib import Path
 
 from bot import Bot, Store, format_line
-from names import ALL, FEMALE, MALE, PEOPLE_FILE, NameBook, group_of
+from names import ALIASES_FILE, ALL, FEMALE, MALE, PEOPLE_FILE, NameBook, group_of
 from schedule_parser import Participant, Rehearsal, parse_participants
 
 D = date(2026, 11, 12)
@@ -16,8 +16,16 @@ def reh(title, people, start=time(12), end=time(13), room="301", day=D):
                      title=title, room=room, participants=parse_participants(people))
 
 
-# подписчики: девушки, парни, пол «?» и имя не из people.json
-SUBS = {"1": "Соня", "2": "Дианна", "3": "Тихон", "4": "Фёдор", "5": "Даня", "6": "Мира"}
+# В people.json сейчас нет людей с полом «?», поэтому для тестов добавляем двоих
+# (Саша, Женя) поверх реальных aliases.json и people.json.
+def book():
+    aliases = json.loads(ALIASES_FILE.read_text(encoding="utf-8"))
+    people = json.loads(PEOPLE_FILE.read_text(encoding="utf-8"))
+    return NameBook(aliases, people | {"Саша": "?", "Женя": "?"})
+
+
+# подписчики: девушки, парни и пол «?»
+SUBS = {"1": "Соня", "2": "Дианна", "3": "Тихон", "4": "Фёдор", "5": "Саша", "6": "Женя"}
 GIRLS, BOYS, UNSURE = {1, 2}, {3, 4}, {5, 6}
 EVERYONE = GIRLS | BOYS | UNSURE
 
@@ -38,7 +46,7 @@ def daily_recipients(table, subs=SUBS):
     store = Store(tmp / "s.json", tmp / "subs.json")
     store.subscribers = dict(subs)
     api = FakeAPI()
-    Bot(api, store, NameBook.load(), lambda: table, lambda: datetime(2026, 11, 11, 21),
+    Bot(api, store, book(), lambda: table, lambda: datetime(2026, 11, 11, 21),
         snapshot_file=tmp / "snap.json").send_daily()
     return {c: t for c, t in api.sent}
 
@@ -86,12 +94,24 @@ class GroupDeliveryTest(unittest.TestCase):
                 self.assertEqual(set(daily_recipients([reh("Хор", group)])), BOYS)
 
     def test_unknown_gender_gets_only_all(self):
-        book = NameBook.load()
-        for name in ("Даня", "Мира", "Вася К", "Дея"):
-            self.assertIsNone(book.gender(name))
-            self.assertTrue(book.matches(name, reh("x", "весь курс")))
-            self.assertFalse(book.matches(name, reh("x", "девушки")))
-            self.assertFalse(book.matches(name, reh("x", "парни")))
+        b = book()
+        for name in ("Саша", "Женя"):
+            self.assertIsNone(b.gender(name))
+            self.assertTrue(b.matches(name, reh("x", "весь курс")))
+            self.assertFalse(b.matches(name, reh("x", "девушки")))
+            self.assertFalse(b.matches(name, reh("x", "парни")))
+
+    def test_real_people_genders(self):
+        b = NameBook.load()
+        expected = {"Даня": MALE, "Мира": FEMALE, "Дея": FEMALE,
+                    "Вася К": FEMALE, "Вася О": FEMALE,       # через алиасы — Василисы
+                    "Мирослава": FEMALE}
+        for name, gender in expected.items():
+            self.assertEqual(b.gender(name), gender, name)
+        self.assertEqual(b.unknown_gender(), [])
+        self.assertTrue(b.matches("Вася К", reh("x", "девушки")))
+        self.assertFalse(b.matches("Даня", reh("x", "девушки")))
+        self.assertTrue(b.matches("Даня", reh("x", "парни")))
 
     def test_group_plus_names(self):
         # девушкам + конкретный парень по имени
@@ -127,6 +147,48 @@ class UnknownWordsTest(unittest.TestCase):
         self.assertEqual(names, ["Миша К", "Соня"])
 
 
+class VasilisaTest(unittest.TestCase):
+    def setUp(self):
+        self.book = NameBook.load()
+
+    def test_vasya_is_vasilisa(self):
+        self.assertEqual(self.book.key("Вася К"), self.book.key("Василиса К."))
+        self.assertEqual(self.book.key("вася о"), self.book.key("Василиса О"))
+        self.assertEqual(self.book.key("Мирослава"), self.book.key("Мира"))
+        self.assertTrue(self.book.matches("Василиса К.", reh("x", "вася к , Мира")))
+        self.assertTrue(self.book.matches("Мира", reh("x", "Мирослава")))
+
+    def test_k_and_o_never_merge(self):
+        pairs = [("Василиса К.", "Василиса О"), ("Вася К", "Вася О"),
+                 ("Вася К", "Василиса О"), ("Вася О", "Василиса К.")]
+        for a, b in pairs:
+            self.assertNotEqual(self.book.key(a), self.book.key(b), (a, b))
+        self.assertFalse(self.book.matches("Василиса К.", reh("x", "Вася О")))
+        self.assertFalse(self.book.matches("Василиса О", reh("x", "Василиса К.")))
+        self.assertFalse(self.book.matches("Вася К", reh("x", "Василиса О")))
+
+    def test_alias_merging_k_and_o_rejected(self):
+        from names import AliasError
+        for bad in ({"Василиса К.": "Василиса О"}, {"Вася К": "Василиса О"},
+                    {"Вася О": "Василиса К."}, {"Вася К": "Вася О"}):
+            with self.assertRaises(AliasError):
+                NameBook(bad)
+
+    def test_registration_shows_main_names_once(self):
+        names = self.book.registration_names(
+            [reh("x", "Вася К, Василиса К., вася о, Василиса О, Мирослава, Мира")])
+        self.assertEqual(names, ["Василиса К.", "Василиса О", "Мира"])
+
+    def test_bare_names_are_ambiguous(self):
+        table = [reh("x", "Василиса, Вася, Василиса К.")]
+        found = {(m.name, m.candidates) for m in self.book.ambiguous(table)}
+        self.assertEqual(found, {("Василиса", ("Василиса К.", "Василиса О")),
+                                 ("Вася", ("Василиса К.", "Василиса О"))})
+        self.assertEqual(self.book.unknown(table), [])          # не «непонятные»
+        self.assertFalse(self.book.matches("Василиса К.", reh("x", "Вася")))
+        self.assertFalse(self.book.matches("Василиса О", reh("x", "Василиса")))
+
+
 class PeopleFileTest(unittest.TestCase):
     def test_values_valid(self):
         data = json.loads(PEOPLE_FILE.read_text(encoding="utf-8"))
@@ -138,7 +200,7 @@ class PeopleFileTest(unittest.TestCase):
     def test_distinct_people_still_distinct(self):
         book = NameBook.load()
         for a, b in [("Миша К", "Миша П"), ("Вася О", "Вася К"), ("Софа", "Соня"),
-                     ("Софа", "Лиза"), ("Ди", "Дея")]:
+                     ("Софа", "Лиза"), ("Ди", "Дея"), ("Василиса К.", "Василиса О")]:
             self.assertNotEqual(book.key(a), book.key(b))
 
     def test_bad_gender_rejected(self):
@@ -154,7 +216,7 @@ class GroupChangesTest(unittest.TestCase):
         api = FakeAPI()
         for table in (before, after):
             api.sent.clear()
-            Bot(api, store, NameBook.load(), lambda t=table: t,
+            Bot(api, store, book(), lambda t=table: t,
                 lambda: datetime(2026, 11, 11, 15), snapshot_file=tmp / "snap.json").check_changes()
         return {c: t for c, t in api.sent}
 

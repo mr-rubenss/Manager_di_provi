@@ -105,7 +105,7 @@ class NamesTest(unittest.TestCase):
 
     def test_ambiguous_reported(self):
         found = {(m.name, m.candidates) for m in self.book.ambiguous(SCHEDULE)}
-        self.assertEqual(found, {("Миша", ("Миша К", "Миша П")), ("Василиса", ("Василиса О",))})
+        self.assertEqual(found, {("Миша", ("Миша К", "Миша П")), ("Василиса", ("Василиса К.", "Василиса О"))})
 
     def test_aliases_file_is_valid_json(self):
         data = json.loads(ALIASES_FILE.read_text(encoding="utf-8"))

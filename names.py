@@ -50,6 +50,9 @@ GROUPS = {
 MUST_BE_DISTINCT = [
     ("Миша К", "Миша П"),
     ("Вася О", "Вася К"),
+    ("Василиса К.", "Василиса О"),
+    ("Вася К", "Василиса О"),
+    ("Вася О", "Василиса К."),
     ("Софа", "Соня"),
     ("Софа", "Лиза"),
 ]
@@ -190,19 +193,36 @@ class NameBook:
         return result
 
     def ambiguous(self, rehearsals: list[Rehearsal]) -> list[AmbiguousMention]:
-        """Имена из одного слова, для которых в таблице есть «то же имя + буква»."""
+        """Имена из одного слова, для которых есть «то же имя + буква».
+
+        Учитываются и варианты из aliases.json: «Вася» неоднозначно, если
+        «Вася К» -> «Василиса К.» и «Вася О» -> «Василиса О».
+        """
         names = self._display_names(rehearsals)
-        by_first: dict[str, list[str]] = defaultdict(list)
+        if self._people is not None:
+            for k, (display, _) in self._people.items():
+                names.setdefault(k, display)
+        variants: dict[str, set[str]] = defaultdict(set)  # ключ основного -> варианты
         for k in names:
-            if " " in k:
-                by_first[k.split(" ", 1)[0]].append(k)
+            variants[k].add(k)
+        for variant, main in self._alias.items():
+            if normalize(main) in names:
+                variants[normalize(main)].add(variant)
+        by_first: dict[str, set[str]] = defaultdict(set)
+        for k, forms in variants.items():
+            for form in forms:
+                if " " in form:
+                    by_first[form.split(" ", 1)[0]].add(k)
         found = []
         for r in rehearsals:
             for p in r.participants:
+                if not self.is_person(p):
+                    continue
                 k = self.key(p.name)
-                if " " not in k and k in by_first:
+                bare = normalize(p.name)
+                if " " not in k and " " not in bare and bare in by_first:
                     found.append(AmbiguousMention(
-                        p.name, tuple(sorted(names[c] for c in by_first[k])), r))
+                        p.name, tuple(sorted(names[c] for c in by_first[bare])), r))
         return found
 
     def unknown(self, rehearsals: list[Rehearsal]) -> list[UnknownMention]:
