@@ -1,0 +1,555 @@
+{
+  "records": [
+    {
+      "date": "2026-11-11",
+      "end": "11:00",
+      "participants": [
+        {
+          "name": "Вася О",
+          "note": null
+        },
+        {
+          "name": "Мира",
+          "note": null
+        },
+        {
+          "name": "Миша П",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "10:00",
+      "time_raw": "10-11",
+      "title": "Эрнест",
+      "weekday": "среда"
+    },
+    {
+      "date": "2026-11-11",
+      "end": "14:30",
+      "participants": [
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Тихон",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "14:20",
+      "time_raw": "14:20-14:30",
+      "title": "Питер Пэн драм (Овчинникова)",
+      "weekday": "среда"
+    },
+    {
+      "date": "2026-11-11",
+      "end": "15:30",
+      "participants": [
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Даня",
+          "note": null
+        },
+        {
+          "name": "Миша К",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "14:30",
+      "time_raw": "14:30 - 15:30",
+      "title": "Хелоу Долли",
+      "weekday": "среда"
+    },
+    {
+      "date": "2026-11-11",
+      "end": "15:30",
+      "participants": [
+        {
+          "name": "Ди",
+          "note": null
+        },
+        {
+          "name": "Мира",
+          "note": null
+        },
+        {
+          "name": "Тихон",
+          "note": null
+        },
+        {
+          "name": "Гриша",
+          "note": null
+        },
+        {
+          "name": "Арсений",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "14:30",
+      "time_raw": "14:30-15:30",
+      "title": "Эрнест",
+      "weekday": "среда"
+    },
+    {
+      "date": "2026-11-11",
+      "end": "14:50",
+      "participants": [
+        {
+          "name": "Соня",
+          "note": null
+        },
+        {
+          "name": "Тома",
+          "note": null
+        }
+      ],
+      "room": "309",
+      "start": "14:30",
+      "time_raw": "14:30-14:50",
+      "title": "Триумф любви муз (Овчинникова)",
+      "weekday": "среда"
+    },
+    {
+      "date": "2026-11-11",
+      "end": "15:10",
+      "participants": [
+        {
+          "name": "Соня",
+          "note": null
+        },
+        {
+          "name": "Софа",
+          "note": null
+        }
+      ],
+      "room": "309",
+      "start": "14:50",
+      "time_raw": "14:50-15:10",
+      "title": "Питер Пэн муз(Овчинникова)",
+      "weekday": "среда"
+    },
+    {
+      "date": "2026-11-11",
+      "end": "16:00",
+      "participants": [
+        {
+          "name": "весь курс",
+          "note": null
+        },
+        {
+          "name": "хор",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "15:30",
+      "time_raw": "15:30-16:00",
+      "title": "Карусель",
+      "weekday": "среда"
+    },
+    {
+      "date": "2026-11-11",
+      "end": "16:00",
+      "participants": [
+        {
+          "name": "Соня",
+          "note": null
+        },
+        {
+          "name": "Вася К",
+          "note": null
+        },
+        {
+          "name": "Вася О",
+          "note": null
+        },
+        {
+          "name": "Маша",
+          "note": null
+        },
+        {
+          "name": "Тамара",
+          "note": null
+        }
+      ],
+      "room": "309",
+      "start": "15:30",
+      "time_raw": "15:30-16:00",
+      "title": "Дом Бернарды Альбы (драм)",
+      "weekday": "среда"
+    },
+    {
+      "date": "2026-11-11",
+      "end": "16:15",
+      "participants": [
+        {
+          "name": "вася к",
+          "note": null
+        },
+        {
+          "name": "тима",
+          "note": null
+        },
+        {
+          "name": "миша п",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "16:00",
+      "time_raw": "16:00-16:15",
+      "title": "Войцек",
+      "weekday": "среда"
+    },
+    {
+      "date": "2026-11-11",
+      "end": "16:35",
+      "participants": [
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Федя",
+          "note": null
+        },
+        {
+          "name": "Василиса К.",
+          "note": null
+        },
+        {
+          "name": "Даня",
+          "note": null
+        },
+        {
+          "name": "Тихон",
+          "note": null
+        },
+        {
+          "name": "Тимофей",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "16:15",
+      "time_raw": "16:15-16-35",
+      "title": "Клоп-драматичен",
+      "weekday": "среда"
+    },
+    {
+      "date": "2026-11-11",
+      "end": "17:00",
+      "participants": [
+        {
+          "name": "Ева",
+          "note": null
+        },
+        {
+          "name": "Федя",
+          "note": null
+        },
+        {
+          "name": "Тихон",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "16:35",
+      "time_raw": "16:35-17:00",
+      "title": "Чикаго муз",
+      "weekday": "среда"
+    },
+    {
+      "date": "2026-11-12",
+      "end": "13:00",
+      "participants": [
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Фёдор",
+          "note": null
+        },
+        {
+          "name": "Даня",
+          "note": null
+        },
+        {
+          "name": "Тихон",
+          "note": null
+        },
+        {
+          "name": "Тимофей",
+          "note": null
+        },
+        {
+          "name": "Василиса К",
+          "note": "?"
+        }
+      ],
+      "room": "309",
+      "start": "12:00",
+      "time_raw": "12:00-13:00",
+      "title": "Клоп",
+      "weekday": "четверг"
+    },
+    {
+      "date": "2026-11-12",
+      "end": "14:30",
+      "participants": [
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Даня",
+          "note": null
+        },
+        {
+          "name": "Миша К",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "13:30",
+      "time_raw": "13:30 - 14:30",
+      "title": "Хелоу Долли",
+      "weekday": "четверг"
+    },
+    {
+      "date": "2026-11-12",
+      "end": "15:10",
+      "participants": [
+        {
+          "name": "Ева",
+          "note": null
+        },
+        {
+          "name": "Миша К",
+          "note": null
+        },
+        {
+          "name": "Тома",
+          "note": null
+        }
+      ],
+      "room": "309",
+      "start": "14:30",
+      "time_raw": "14:30-15:10",
+      "title": "драм Лилиом",
+      "weekday": "четверг"
+    },
+    {
+      "date": "2026-11-12",
+      "end": "17:50",
+      "participants": [
+        {
+          "name": "Ди",
+          "note": null
+        },
+        {
+          "name": "Мира",
+          "note": null
+        },
+        {
+          "name": "Тихон",
+          "note": null
+        },
+        {
+          "name": "Гриша",
+          "note": null
+        },
+        {
+          "name": "Соня",
+          "note": null
+        }
+      ],
+      "room": "309",
+      "start": "17:00",
+      "time_raw": "17:00-17:50",
+      "title": "Эрнест",
+      "weekday": "четверг"
+    },
+    {
+      "date": "2026-11-12",
+      "end": "18:40",
+      "participants": [
+        {
+          "name": "Соня",
+          "note": null
+        },
+        {
+          "name": "Дианна",
+          "note": null
+        },
+        {
+          "name": "Василиса О",
+          "note": null
+        }
+      ],
+      "room": "309",
+      "start": "17:50",
+      "time_raw": "17:50-18:40",
+      "title": "Муз.солдатик",
+      "weekday": "четверг"
+    },
+    {
+      "date": "2026-11-13",
+      "end": "19:00",
+      "participants": [
+        {
+          "name": "Арсений",
+          "note": null
+        },
+        {
+          "name": "Дианна",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "18:20",
+      "time_raw": "18:20-19:00",
+      "title": "солдатик драм",
+      "weekday": "пятница"
+    },
+    {
+      "date": "2026-11-13",
+      "end": "19:00",
+      "participants": [
+        {
+          "name": "Ева",
+          "note": null
+        },
+        {
+          "name": "Миша К",
+          "note": null
+        },
+        {
+          "name": "Тома",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "18:20",
+      "time_raw": "18:20-19:00",
+      "title": "драм Лилиом",
+      "weekday": "пятница"
+    },
+    {
+      "date": "2026-11-13",
+      "end": "20:00",
+      "participants": [
+        {
+          "name": "Ева",
+          "note": null
+        },
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Гриша",
+          "note": null
+        },
+        {
+          "name": "Даня",
+          "note": null
+        },
+        {
+          "name": "Дея",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "19:00",
+      "time_raw": "19:00–20:00",
+      "title": "драм изгибы",
+      "weekday": "пятница"
+    },
+    {
+      "date": "2026-11-14",
+      "end": "14:00",
+      "participants": [
+        {
+          "name": "Мира",
+          "note": null
+        },
+        {
+          "name": "Миша П",
+          "note": null
+        },
+        {
+          "name": "Василиса О",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "13:00",
+      "time_raw": "13:00-14:00",
+      "title": "Эрнест",
+      "weekday": "суббота"
+    },
+    {
+      "date": "2026-11-14",
+      "end": "16:30",
+      "participants": [
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Даня",
+          "note": null
+        },
+        {
+          "name": "Миша К",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "15:30",
+      "time_raw": "15:30- 16:30",
+      "title": "Хелоу Долли",
+      "weekday": "суббота"
+    },
+    {
+      "date": "2026-11-14",
+      "end": "16:30",
+      "participants": [
+        {
+          "name": "Ди",
+          "note": null
+        },
+        {
+          "name": "Мира",
+          "note": null
+        },
+        {
+          "name": "Тихон",
+          "note": null
+        },
+        {
+          "name": "Гриша",
+          "note": null
+        },
+        {
+          "name": "Соня",
+          "note": null
+        }
+      ],
+      "room": "309",
+      "start": "15:30",
+      "time_raw": "15:30-16:30",
+      "title": "Эрнест",
+      "weekday": "суббота"
+    }
+  ],
+  "source": "1kVfvZjTg28-gBQXUATRMetdhLhUGdL0dg4oxJSJ2fdw/Лист1"
+}
