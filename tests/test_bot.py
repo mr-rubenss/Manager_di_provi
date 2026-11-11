@@ -128,29 +128,40 @@ class FormatTest(unittest.TestCase):
 
 
 class FlowTest(unittest.TestCase):
-    def test_consent_then_register_then_stop(self):
+    def test_start_shows_names_then_register_then_stop(self):
         bot, api, store, tmp = make_bot([msg(1, "/start")])
         bot.poll()
-        self.assertIn("публичном репозитории GitHub", api.sent[-1][1])
-        self.assertEqual(api.sent[-1][2], [[{"text": "Согласен", "callback_data": "agree"}]])
-        self.assertEqual(store.subscribers, {})                     # без согласия — ничего
-        self.assertEqual(json.loads((tmp / "subscribers.json").read_text()), {})
-
-        api.updates = [cb(2, "agree")]
-        bot.poll()
-        labels = [b["text"] for row in api.sent[-1][2] for b in row]
+        chat, text, keyboard = api.sent[-1]
+        self.assertEqual(text, "Выбери своё имя, чтобы получать расписание репетиций")
+        labels = [b["text"] for row in keyboard for b in row]
         self.assertIn("Соня", labels)
         self.assertNotIn("Лиза", labels)
-        self.assertEqual(store.subscribers, {})
+        self.assertNotIn("Согласен", labels)
+        self.assertEqual(len(api.sent), 1)                         # только одно сообщение
+        self.assertEqual(store.subscribers, {})                    # до выбора имени — пусто
+        self.assertEqual(json.loads((tmp / "subscribers.json").read_text()), {})
 
         api.updates = [cb(3, "n:" + bot.book.key("Соня"))]
         bot.poll()
         self.assertEqual(json.loads((tmp / "subscribers.json").read_text()), {"42": "Соня"})
         self.assertEqual(json.loads((tmp / "state.json").read_text())["offset"], 4)
+        self.assertIn("«Соня»", api.sent[-1][1])
 
         api.updates = [msg(4, "/stop")]
         bot.poll()
         self.assertEqual(json.loads((tmp / "subscribers.json").read_text()), {})
+
+    def test_old_agree_button_still_shows_names(self):
+        bot, api, store, _ = make_bot([cb(1, "agree")])
+        bot.poll()
+        self.assertEqual(api.sent[-1][1], "Выбери своё имя, чтобы получать расписание репетиций")
+        self.assertEqual(store.subscribers, {})
+
+    def test_start_again_changes_name(self):
+        bot, api, store, _ = make_bot([msg(1, "/start"), cb(2, "n:соня"),
+                                       msg(3, "/start"), cb(4, "n:софа")])
+        bot.poll()
+        self.assertEqual(store.subscribers, {"42": "Софа"})
 
     def test_unknown_name_callback_not_saved(self):
         bot, api, store, _ = make_bot([cb(1, "n:миша")])
@@ -249,7 +260,7 @@ class DryRunTest(unittest.TestCase):
         before = [f.read_bytes() if f.exists() else None for f in repo_files]
         store, snapshot = _dry_run_store()
         self.assertNotEqual(store.state_file.parent, bot_module.ROOT)
-        updates = [msg(1, "/start"), cb(2, "agree"), cb(3, "n:соня"), msg(4, "/tomorrow")]
+        updates = [msg(1, "/start"), cb(3, "n:соня"), msg(4, "/tomorrow")]
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             b = Bot(DryRunAPI(updates), store, NameBook.load(), lambda: SCHEDULE,
@@ -259,7 +270,8 @@ class DryRunTest(unittest.TestCase):
             b.send_daily()
         printed = out.getvalue()
         self.assertIn("[dry-run] сообщение в chat 42", printed)
-        self.assertIn("[Согласен]", printed)
+        self.assertIn("Выбери своё имя, чтобы получать расписание репетиций", printed)
+        self.assertIn("[Соня]", printed)
         self.assertIn("РАСПИСАНИЕ РЕПЕТИЦИЙ 12.11.26:", printed)
         self.assertEqual(store.subscribers, {"42": "Соня"})       # только во временной копии
         after = [f.read_bytes() if f.exists() else None for f in repo_files]

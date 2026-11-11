@@ -48,11 +48,7 @@ TZ_NAME = os.environ.get("BOT_TIMEZONE", "Europe/Moscow")
 DAILY_HOUR = int(os.environ.get("DAILY_HOUR", "21"))  # рассылка — с 21:00 по BOT_TIMEZONE
 NAME_BUTTONS_PER_ROW = 3
 
-CONSENT_TEXT = (
-    "Бот сохраняет твоё имя из расписания и Telegram chat_id в публичном "
-    "репозитории GitHub. Продолжая, ты соглашаешься с этим. Отменить можно "
-    "командой /stop — данные будут удалены."
-)
+GREETING_TEXT = "Выбери своё имя, чтобы получать расписание репетиций"
 HELP_TEXT = (
     "Команды:\n"
     "/today — мои репетиции сегодня\n"
@@ -272,8 +268,7 @@ class Bot:
         command = text.split()[0].split("@")[0].lower()
 
         if command == "/start":
-            self.api.send_message(chat_id, CONSENT_TEXT,
-                                  [[{"text": "Согласен", "callback_data": "agree"}]])
+            self.send_name_picker(chat_id)
         elif command == "/stop":
             if self.store.subscribers.pop(str(chat_id), None) is not None:
                 self.store.save()
@@ -299,15 +294,8 @@ class Bot:
         data = cq.get("data") or ""
 
         if data == "agree":
-            names = self.book.registration_names(self.schedule)
-            if not names:
-                self.api.send_message(chat_id, "В расписании пока нет имён. Попробуй позже.")
-                return
-            buttons = [{"text": n, "callback_data": "n:" + self.book.key(n)} for n in names]
-            buttons = [b for b in buttons if len(b["callback_data"].encode()) <= 64]
-            rows = [buttons[i:i + NAME_BUTTONS_PER_ROW]
-                    for i in range(0, len(buttons), NAME_BUTTONS_PER_ROW)]
-            self.api.send_message(chat_id, "Выбери своё имя из расписания:", rows)
+            # кнопка «Согласен» из старых сообщений (до отказа от предупреждения)
+            self.send_name_picker(chat_id)
         elif data.startswith("n:"):
             name = self.book.find_registration_name(self.schedule, data[2:])
             if name is None:
@@ -318,6 +306,17 @@ class Bot:
             self.store.save()
             self.api.send_message(chat_id, f"Готово, ты записан(а) как «{name}». "
                                   f"Каждый вечер пришлю репетиции на завтра.\n\n{HELP_TEXT}")
+
+    def send_name_picker(self, chat_id) -> None:
+        names = self.book.registration_names(self.schedule)
+        if not names:
+            self.api.send_message(chat_id, "В расписании пока нет имён. Попробуй позже.")
+            return
+        buttons = [{"text": n, "callback_data": "n:" + self.book.key(n)} for n in names]
+        buttons = [b for b in buttons if len(b["callback_data"].encode()) <= 64]
+        rows = [buttons[i:i + NAME_BUTTONS_PER_ROW]
+                for i in range(0, len(buttons), NAME_BUTTONS_PER_ROW)]
+        self.api.send_message(chat_id, GREETING_TEXT, rows)
 
     def send_personal(self, chat_id, command: str) -> None:
         name = self.store.subscribers.get(str(chat_id))
