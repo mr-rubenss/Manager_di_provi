@@ -17,14 +17,18 @@ from __future__ import annotations
 
 import csv
 import io
+import os
 import re
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import date, time
 
-SPREADSHEET_ID = "1kVfvZjTg28-gBQXUATRMetdhLhUGdL0dg4oxJSJ2fdw"
-SHEET_NAME = "Лист1"
+# Таблица и рабочая вкладка. Можно переопределить переменными окружения
+# (в GitHub — Settings → Secrets and variables → Actions → Variables).
+SPREADSHEET_ID = (os.environ.get("SCHEDULE_SPREADSHEET_ID")
+                  or "1kVfvZjTg28-gBQXUATRMetdhLhUGdL0dg4oxJSJ2fdw")
+SHEET_NAME = os.environ.get("SCHEDULE_SHEET_NAME") or "Лист1"
 
 BLOCK_WIDTH = 3   # время, название, участники
 DATA_START_ROW = 3  # индекс (с нуля) первой строки с данными
@@ -132,12 +136,18 @@ def parse_time_range(raw: str) -> tuple[time | None, time | None]:
 
     «10-11» -> 10:00–11:00, «14:30 - 15:30» -> 14:30–15:30,
     «16:15-16-35» -> 16:15–16:35, «16-35» -> 16:35, «15:30- 16:30», «19:00–20:00».
+
+    Если запись нельзя понять однозначно (неверные часы/минуты, конец раньше
+    начала, несколько интервалов, нет начала), возвращается (None, None):
+    бот не угадывает и показывает текст ячейки как есть.
     """
     s = _clean(raw)
     if not s:
         return None, None
     s = re.sub(r"[‐-―−]", "-", s)  # все виды тире -> «-»
     nums = [(int(m.group()), m.start(), m.end()) for m in _NUM.finditer(s)]
+    if not nums or s[:nums[0][1]].strip().endswith("-"):  # «-11:00»: начала нет
+        return None, None
     # разделители между соседними числами
     seps = [s[a[2]:b[1]].strip() or " " for a, b in zip(nums, nums[1:])]
     n = [x[0] for x in nums]
@@ -145,23 +155,37 @@ def parse_time_range(raw: str) -> tuple[time | None, time | None]:
     def is_minsep(sep: str) -> bool:
         return sep in (":", ".", ",")
 
-    if len(n) >= 4:
-        return _mk(n[0], n[1]), _mk(n[2], n[3])
-    if len(n) == 3:
+    ok = True
+
+    def mk(h: int, m: int = 0) -> time | None:
+        nonlocal ok
+        t = _mk(h, m)
+        ok = ok and t is not None
+        return t
+
+    if len(n) > 4:                        # «12:00-13:00, 14-15» — два интервала
+        return None, None
+    if len(n) == 4:
+        start, end = mk(n[0], n[1]), mk(n[2], n[3])
+    elif len(n) == 3:
         if is_minsep(seps[0]):            # 10:30-11
-            return _mk(n[0], n[1]), _mk(n[2])
-        return _mk(n[0]), _mk(n[1], n[2])  # 10-11:30
-    if len(n) == 2:
-        if is_minsep(seps[0]):            # 16:35
-            return _mk(n[0], n[1]), None
+            start, end = mk(n[0], n[1]), mk(n[2])
+        else:                             # 10-11:30
+            start, end = mk(n[0]), mk(n[1], n[2])
+    elif len(n) == 2:
         a, b = n
-        if b > 23 or b <= a:              # «16-35» — опечатка вместо 16:35
-            t = _mk(a, b)
-            return (t, None) if t else (_mk(a), None)
-        return _mk(a), _mk(b)             # «10-11»
-    if len(n) == 1:
-        return _mk(n[0]), None
-    return None, None
+        if is_minsep(seps[0]):            # 16:35
+            start, end = mk(a, b), None
+        elif b > 23:                      # «16-35» — опечатка вместо 16:35
+            start, end = mk(a, b), None
+        else:                             # «10-11»
+            start, end = mk(a), mk(b)
+    else:
+        start, end = mk(n[0]), None
+
+    if not ok or (end is not None and end <= start):
+        return None, None
+    return start, end
 
 
 def _split_top_level(s: str, sep: str = ",") -> list[str]:
@@ -181,18 +205,41 @@ def _split_top_level(s: str, sep: str = ",") -> list[str]:
     return parts
 
 
+def _outside_parens(s: str, fn) -> str:
+    """Применяет fn только к тексту вне скобок."""
+    out, buf, depth = [], [], 0
+    for ch in s:
+        if ch in "([":
+            if depth == 0:
+                out.append(fn("".join(buf)))
+                buf = []
+            depth += 1
+            out.append(ch)
+        elif ch in ")]" and depth:
+            depth -= 1
+            out.append(ch)
+        elif depth:
+            out.append(ch)
+        else:
+            buf.append(ch)
+    out.append(fn("".join(buf)))
+    return "".join(out)
+
+
 _PARENS = re.compile(r"[(\[]([^)\]]*)[)\]]?")
 
 
 def parse_participants(raw: str) -> list[Participant]:
     """«Софа, Даня, (Василиса?)» -> [Софа, Даня, Василиса(note="?")]."""
     result = []
-    for part in _split_top_level(_clean(raw).replace(";", ",")):
+    # перенос строки в ячейке, «;» и союз «и» — тоже разделители (но не в скобках)
+    raw = _outside_parens(raw or "", lambda t: re.sub(r"\s+и\s+", ",", re.sub(r"[\r\n;]+", ",", t)))
+    for part in _split_top_level(_clean(raw)):
         part = _clean(part)
         if not part:
             continue
         notes = [_clean(x) for x in _PARENS.findall(part)]
-        name = _clean(_PARENS.sub(" ", part)).strip(" ,-")
+        name = _clean(_PARENS.sub(" ", part).replace(")", " ").replace("]", " ")).strip(" ,-")
         if not name:
             # вся запись в скобках: «(Василиса?)» — имя под вопросом
             inner = " ".join(notes)
@@ -229,8 +276,9 @@ def parse_rows(rows: list[list[str]]) -> list[Rehearsal]:
             room = next((_clean(c) for c in room_row[col:col + BLOCK_WIDTH] if _clean(c)), "")
             for row in rows[DATA_START_ROW:]:
                 cells = (row[col:col + BLOCK_WIDTH] + [""] * BLOCK_WIDTH)[:BLOCK_WIDTH]
-                t_raw, title, people = (_clean(c) for c in cells)
-                if not (title or people):
+                t_raw, title = _clean(cells[0]), _clean(cells[1])
+                people = cells[2] or ""  # без _clean: перенос строки — тоже разделитель
+                if not (title or _clean(people)):
                     continue  # пустая строка или одиноко стоящее время
                 start, end = parse_time_range(t_raw)
                 records.append(Rehearsal(

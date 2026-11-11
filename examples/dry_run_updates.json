@@ -1,0 +1,9 @@
+[
+  {"update_id": 1, "message": {"chat": {"id": 1001, "type": "private"}, "text": "/start"}},
+  {"update_id": 2, "callback_query": {"id": "a", "data": "agree",
+                                      "message": {"chat": {"id": 1001, "type": "private"}}}},
+  {"update_id": 3, "callback_query": {"id": "b", "data": "n:соня",
+                                      "message": {"chat": {"id": 1001, "type": "private"}}}},
+  {"update_id": 4, "message": {"chat": {"id": 1001, "type": "private"}, "text": "/week"}},
+  {"update_id": 5, "message": {"chat": {"id": 1001, "type": "private"}, "text": "/stop"}}
+]

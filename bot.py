@@ -8,6 +8,14 @@
   python bot.py run                  — poll + send_daily, если наступил час рассылки
                                        и она ещё не сделана (запасной путь для poll.yml)
   python bot.py check_names          — показать имена, которые нужно проверить
+  python bot.py preview ИМЯ [дд.мм.гг] — показать, что придёт человеку (по умолчанию — завтра)
+
+Локальная проверка без отправки сообщений (токен не нужен):
+  python bot.py run --dry-run [--now "2026-11-11 21:05"] [--updates examples/dry_run_updates.json]
+  --dry-run  Telegram не вызывается: сообщения печатаются, а JSON-файлы
+             меняются только во временной копии;
+  --updates  «входящие сообщения» из файла вместо getUpdates;
+  --now      подменить текущее время (МСК), например чтобы проверить 21:00.
 
 Токен берётся только из переменной окружения TELEGRAM_BOT_TOKEN и нигде
 не печатается: ошибки сети очищаются от URL с токеном.
@@ -15,8 +23,12 @@
 
 from __future__ import annotations
 
+import argparse
 import os
+import re
+import shutil
 import sys
+import tempfile
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
@@ -391,7 +403,8 @@ class Bot:
         old = ch.load_snapshot(self.snapshot_file)
         if old is None:
             ch.save_snapshot(new, self.snapshot_file)
-            log(f"Создан снимок расписания: {len(new)} записей, уведомлений нет")
+            log(f"Создан снимок расписания ({len(new)} записей) — первый запуск "
+                f"или сменилась вкладка таблицы; уведомлений нет")
             return 0
 
         changes = ch.diff(ch.upcoming(old, today), new, self.book)
@@ -447,22 +460,95 @@ def check_names() -> int:
     return 1 if problems else 0
 
 
+class DryRunAPI:
+    """Подмена Telegram для локальной проверки: ничего не отправляет, печатает."""
+
+    def __init__(self, updates: list[dict] | None = None):
+        self._updates = list(updates or [])
+
+    def call(self, method: str, **params):
+        if method == "getUpdates":
+            res = [u for u in self._updates if u["update_id"] >= params.get("offset", 0)]
+            self._updates = []
+            return res
+        return True
+
+    def send_message(self, chat_id, text: str, keyboard: list | None = None):
+        print(f"\n----- [dry-run] сообщение в chat {chat_id} -----\n{text}")
+        for row in keyboard or []:
+            print("  " + "  ".join(f"[{b['text']}]" for b in row))
+        return {}
+
+
+def _dry_run_store() -> tuple[Store, Path]:
+    """Копии state/subscribers/snapshot во временной папке — репозиторий не меняется."""
+    tmp = Path(tempfile.mkdtemp(prefix="bot-dry-run-"))
+    for f in (STATE_FILE, SUBSCRIBERS_FILE, ch.SNAPSHOT_FILE):
+        if f.exists():
+            shutil.copy(f, tmp / f.name)
+    return Store(tmp / STATE_FILE.name, tmp / SUBSCRIBERS_FILE.name), tmp / ch.SNAPSHOT_FILE.name
+
+
+def preview(name: str, day_str: str | None) -> int:
+    book = NameBook.load()
+    day = (datetime.strptime(day_str, "%d.%m.%y").date() if day_str
+           else local_now().date() + timedelta(days=1))
+    items = rehearsals_for(name, day, load_schedule(), book)
+    if not book.is_known(name):
+        print(f"Внимание: «{name}» нет в people.json — такой подписчик не получит "
+              f"репетиций по имени, только групповые «всем».")
+    print(format_day(day, items) if items
+          else f"{name}: на {day:%d.%m.%y} репетиций нет — сообщение не отправляется.")
+    return 0
+
+
 def main(argv: list[str]) -> int:
-    mode = argv[1] if len(argv) > 1 else "run"
-    if mode == "check_names":
+    parser = argparse.ArgumentParser(prog="bot.py", description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("mode", nargs="?", default="run",
+                        choices=["poll", "send_daily", "run", "check_names", "preview"])
+    parser.add_argument("args", nargs="*", help="для preview: ИМЯ [дд.мм.гг]")
+    parser.add_argument("--force", action="store_true", help="send_daily: не ждать 21:00")
+    parser.add_argument("--dry-run", action="store_true", help="ничего не отправлять и не сохранять")
+    parser.add_argument("--updates", type=Path, help="dry-run: входящие сообщения из JSON-файла")
+    parser.add_argument("--now", help='dry-run: подменить время, «ГГГГ-ММ-ДД ЧЧ:ММ» (МСК)')
+    opts = parser.parse_args(argv[1:])
+
+    if opts.mode == "check_names":
         return check_names()
-    if mode not in ("poll", "send_daily", "run"):
-        print(__doc__)
-        return 2
-    bot = Bot(TelegramAPI(os.environ.get("TELEGRAM_BOT_TOKEN", "")), Store(), NameBook.load())
-    if mode in ("poll", "run"):
+    if opts.mode == "preview":
+        if not opts.args:
+            parser.error("preview: укажи имя, например: preview Соня 12.11.26")
+        return preview(" ".join(a for a in opts.args if not _DATE_ARG.fullmatch(a)),
+                       next((a for a in opts.args if _DATE_ARG.fullmatch(a)), None))
+    if (opts.updates or opts.now) and not opts.dry_run:
+        parser.error("--updates и --now работают только вместе с --dry-run")
+
+    if opts.dry_run:
+        updates = read_json(opts.updates, []) if opts.updates else []
+        store, snapshot = _dry_run_store()
+        now = local_now
+        if opts.now:
+            fixed = datetime.strptime(opts.now, "%Y-%m-%d %H:%M")
+            now = lambda: fixed  # noqa: E731
+        bot = Bot(DryRunAPI(updates), store, NameBook.load(), now=now, snapshot_file=snapshot)
+        log(f"[dry-run] сообщения не отправляются, файлы — во временной папке {snapshot.parent}")
+    else:
+        bot = Bot(TelegramAPI(os.environ.get("TELEGRAM_BOT_TOKEN", "")), Store(), NameBook.load())
+
+    if opts.mode in ("poll", "run"):
         log(f"Обработано обновлений: {bot.poll()}")
         bot.check_changes()
-    if mode == "send_daily":
-        bot.send_daily(force="--force" in argv)
-    elif mode == "run":
+    if opts.mode == "send_daily":
+        bot.send_daily(force=opts.force)
+    elif opts.mode == "run":
         bot.send_daily()  # сам решит, пора ли (с 21:00 и ещё не отправлено)
+    if opts.dry_run:
+        log(f"[dry-run] подписчики после запуска: {store.subscribers}")
     return 0
+
+
+_DATE_ARG = re.compile(r"\d{1,2}\.\d{1,2}\.\d{2}")
 
 
 if __name__ == "__main__":

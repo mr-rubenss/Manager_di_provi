@@ -57,17 +57,28 @@ def upcoming(records: list[Rehearsal], today: date) -> list[Rehearsal]:
     return [r for r in records if r.date is not None and r.date >= today]
 
 
-def load_snapshot(path: Path = SNAPSHOT_FILE) -> list[Rehearsal] | None:
-    """None — снимка ещё нет (первый запуск)."""
+def current_source() -> str:
+    """Откуда снимок: таблица и вкладка. Сменили вкладку — старый снимок не годится."""
+    from schedule_parser import SHEET_NAME, SPREADSHEET_ID
+    return f"{SPREADSHEET_ID}/{SHEET_NAME}"
+
+
+def load_snapshot(path: Path = SNAPSHOT_FILE, source: str | None = None) -> list[Rehearsal] | None:
+    """None — снимка нет (первый запуск) или он сделан с другой таблицы/вкладки."""
     if not path.exists():
         return None
     with path.open(encoding="utf-8") as f:
-        return [from_dict(d) for d in json.load(f)["records"]]
+        data = json.load(f)
+    source = source or current_source()
+    if data.get("source", source) != source:
+        return None
+    return [from_dict(d) for d in data["records"]]
 
 
-
-def save_snapshot(records: list[Rehearsal], path: Path = SNAPSHOT_FILE) -> None:
-    write_json(path, {"records": [to_dict(r) for r in records]})
+def save_snapshot(records: list[Rehearsal], path: Path = SNAPSHOT_FILE,
+                  source: str | None = None) -> None:
+    write_json(path, {"source": source or current_source(),
+                      "records": [to_dict(r) for r in records]})
 
 
 # --------------------------------------------------------------------------- #

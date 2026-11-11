@@ -37,6 +37,10 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           BOT_TIMEZONE: Europe/Moscow
+          # смена таблицы/вкладки без правки кода: Settings → Secrets and variables →
+          # Actions → Variables (пусто — значения по умолчанию из schedule_parser.py)
+          SCHEDULE_SPREADSHEET_ID: ${{ vars.SCHEDULE_SPREADSHEET_ID }}
+          SCHEDULE_SHEET_NAME: ${{ vars.SCHEDULE_SHEET_NAME }}
         run: python bot.py run
 
       - name: Commit state

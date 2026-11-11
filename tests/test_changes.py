@@ -203,3 +203,21 @@ class DiffUnitTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SourceTest(unittest.TestCase):
+    def test_other_tab_snapshot_is_ignored(self):
+        tmp = Path(tempfile.mkdtemp()) / "snap.json"
+        ch.save_snapshot(BASE[:2], tmp, source="sheet/Лист1")
+        self.assertEqual(len(ch.load_snapshot(tmp, source="sheet/Лист1")), 2)
+        self.assertIsNone(ch.load_snapshot(tmp, source="sheet/Лист 2"))   # сменили вкладку
+
+    def test_switching_tab_sends_nothing(self):
+        env = Env(SUBS)
+        env.run()
+        data = json.loads(env.snapshot.read_text())
+        data["source"] = "другая-таблица/Лист9"
+        env.snapshot.write_text(json.dumps(data, ensure_ascii=False))
+        env.table = [reh("Совсем другое", "Соня, Софа", time(9), time(10))]
+        self.assertEqual(env.run(), {})                       # снимок пересоздан молча
+        self.assertEqual(env.snapshot_titles(), ["Совсем другое"])

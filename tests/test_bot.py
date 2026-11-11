@@ -235,3 +235,32 @@ class TokenTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DryRunTest(unittest.TestCase):
+    def test_dry_run_touches_no_repo_files(self):
+        import contextlib
+        import io
+
+        import bot as bot_module
+        from bot import DryRunAPI, _dry_run_store
+
+        repo_files = [bot_module.STATE_FILE, bot_module.SUBSCRIBERS_FILE]
+        before = [f.read_bytes() if f.exists() else None for f in repo_files]
+        store, snapshot = _dry_run_store()
+        self.assertNotEqual(store.state_file.parent, bot_module.ROOT)
+        updates = [msg(1, "/start"), cb(2, "agree"), cb(3, "n:соня"), msg(4, "/tomorrow")]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            b = Bot(DryRunAPI(updates), store, NameBook.load(), lambda: SCHEDULE,
+                    lambda: datetime(2026, 11, 11, 21, 5), snapshot_file=snapshot)
+            b.poll()
+            b.check_changes()
+            b.send_daily()
+        printed = out.getvalue()
+        self.assertIn("[dry-run] сообщение в chat 42", printed)
+        self.assertIn("[Согласен]", printed)
+        self.assertIn("РАСПИСАНИЕ РЕПЕТИЦИЙ 12.11.26:", printed)
+        self.assertEqual(store.subscribers, {"42": "Соня"})       # только во временной копии
+        after = [f.read_bytes() if f.exists() else None for f in repo_files]
+        self.assertEqual(before, after)
