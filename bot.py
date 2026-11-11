@@ -46,16 +46,22 @@ SUBSCRIBERS_FILE = ROOT / "subscribers.json"
 
 TZ_NAME = os.environ.get("BOT_TIMEZONE", "Europe/Moscow")
 DAILY_HOUR = int(os.environ.get("DAILY_HOUR", "21"))  # рассылка — с 21:00 по BOT_TIMEZONE
-NAME_BUTTONS_PER_ROW = 3
 
-GREETING_TEXT = "Выбери своё имя, чтобы получать расписание репетиций"
 HELP_TEXT = (
     "Команды:\n"
     "/today — мои репетиции сегодня\n"
     "/tomorrow — мои репетиции завтра\n"
     "/week — мои репетиции на 7 дней\n"
     "/stop — отписаться и удалить мои данные\n"
-    "/start — зарегистрироваться или сменить имя"
+    "/start — что умеет бот и как сменить имя"
+)
+ABOUT_TEXT = (
+    "Привет! Я присылаю расписание репетиций из общей таблицы.\n\n"
+    "Что я умею:\n"
+    "• каждый вечер после 21:00 присылаю твои репетиции на завтра;\n"
+    "• сообщаю, если в расписании что-то поменялось;\n"
+    "• показываю твои репетиции по командам.\n\n"
+    "Отвечаю не мгновенно: обычно в течение 5–60 минут."
 )
 
 
@@ -267,8 +273,10 @@ class Bot:
         chat_id = chat["id"]
         command = text.split()[0].split("@")[0].lower()
 
-        if command == "/start":
-            self.send_name_picker(chat_id)
+        if not text.startswith("/"):
+            self.handle_name(chat_id, text)
+        elif command == "/start":
+            self.send_welcome(chat_id)
         elif command == "/stop":
             if self.store.subscribers.pop(str(chat_id), None) is not None:
                 self.store.save()
@@ -293,9 +301,9 @@ class Bot:
         chat_id = chat["id"]
         data = cq.get("data") or ""
 
+        # Кнопки остались только в старых сообщениях: теперь имя пишут текстом.
         if data == "agree":
-            # кнопка «Согласен» из старых сообщений (до отказа от предупреждения)
-            self.send_name_picker(chat_id)
+            self.send_welcome(chat_id)
         elif data.startswith("n:"):
             name = self.book.find_registration_name(self.schedule, data[2:])
             if name is None:
@@ -307,16 +315,50 @@ class Bot:
             self.api.send_message(chat_id, f"Готово, ты записан(а) как «{name}». "
                                   f"Каждый вечер пришлю репетиции на завтра.\n\n{HELP_TEXT}")
 
-    def send_name_picker(self, chat_id) -> None:
-        names = self.book.registration_names(self.schedule)
-        if not names:
-            self.api.send_message(chat_id, "В расписании пока нет имён. Попробуй позже.")
-            return
-        buttons = [{"text": n, "callback_data": "n:" + self.book.key(n)} for n in names]
-        buttons = [b for b in buttons if len(b["callback_data"].encode()) <= 64]
-        rows = [buttons[i:i + NAME_BUTTONS_PER_ROW]
-                for i in range(0, len(buttons), NAME_BUTTONS_PER_ROW)]
-        self.api.send_message(chat_id, GREETING_TEXT, rows)
+    def welcome_text(self, chat_id) -> str:
+        examples = "; ".join(" или ".join(g) for g in self.book.repeated_names(self.schedule))
+        parts = [ABOUT_TEXT, HELP_TEXT]
+        current = self.store.subscribers.get(str(chat_id))
+        ask = ("Чтобы начать, напиши своё имя так, как оно записано в расписании, "
+               "например: Соня.")
+        if current:
+            ask = (f"Сейчас ты записан(а) как «{current}». "
+                   f"Чтобы сменить имя, просто напиши новое.")
+        if examples:
+            ask += ("\nЕсли твоё имя есть у нескольких человек, добавь первую букву "
+                    f"фамилии: {examples}.")
+        parts.append(ask)
+        return "\n\n".join(parts)
+
+    def send_welcome(self, chat_id) -> None:
+        self.api.send_message(chat_id, self.welcome_text(chat_id))
+
+    def handle_name(self, chat_id, text: str) -> None:
+        """Любой текст без «/» — попытка написать своё имя."""
+        current = self.store.subscribers.get(str(chat_id))
+        name, candidates = self.book.resolve_typed(text, self.schedule)
+        if name is not None:
+            if name == current:
+                self.api.send_message(chat_id, f"Ты уже записан(а) как «{name}».")
+                return
+            self.store.subscribers[str(chat_id)] = name
+            self.store.save()
+            verb = "Имя изменено" if current else "Готово"
+            self.api.send_message(chat_id, f"{verb}: ты записан(а) как «{name}». "
+                                  f"Каждый вечер после 21:00 пришлю репетиции на завтра."
+                                  f"\n\n{HELP_TEXT}")
+        elif candidates:
+            self.api.send_message(chat_id, "Это имя есть у нескольких человек: "
+                                  f"{', '.join(candidates)}. Напиши своё имя с первой "
+                                  f"буквой фамилии, например «{candidates[0]}».")
+        elif current:
+            self.api.send_message(chat_id, f"Не понял. Ты записан(а) как «{current}»; "
+                                  f"чтобы сменить имя, напиши его так, как в расписании."
+                                  f"\n\n{HELP_TEXT}")
+        else:
+            self.api.send_message(chat_id, "Не нашёл такого имени среди участников. "
+                                  "Напиши имя так, как оно записано в расписании, "
+                                  "например: Соня или Миша К.")
 
     def send_personal(self, chat_id, command: str) -> None:
         name = self.store.subscribers.get(str(chat_id))

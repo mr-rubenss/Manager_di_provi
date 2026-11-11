@@ -202,17 +202,7 @@ class NameBook:
         if self._people is not None:
             for k, (display, _) in self._people.items():
                 names.setdefault(k, display)
-        variants: dict[str, set[str]] = defaultdict(set)  # ключ основного -> варианты
-        for k in names:
-            variants[k].add(k)
-        for variant, main in self._alias.items():
-            if normalize(main) in names:
-                variants[normalize(main)].add(variant)
-        by_first: dict[str, set[str]] = defaultdict(set)
-        for k, forms in variants.items():
-            for form in forms:
-                if " " in form:
-                    by_first[form.split(" ", 1)[0]].add(k)
+        by_first = self._by_first_word(names)
         found = []
         for r in rehearsals:
             for p in r.participants:
@@ -224,6 +214,61 @@ class NameBook:
                     found.append(AmbiguousMention(
                         p.name, tuple(sorted(names[c] for c in by_first[bare])), r))
         return found
+
+    def _by_first_word(self, names: dict[str, str]) -> dict[str, set[str]]:
+        """первое слово -> ключи основных имён «с буквой фамилии».
+
+        Учитываются варианты из aliases.json: «вася» -> {василиса к, василиса о}.
+        """
+        variants: dict[str, set[str]] = defaultdict(set)  # ключ основного -> варианты
+        for k in names:
+            variants[k].add(k)
+        for variant, main in self._alias.items():
+            if normalize(main) in names:
+                variants[normalize(main)].add(variant)
+        by_first: dict[str, set[str]] = defaultdict(set)
+        for k, forms in variants.items():
+            for form in forms:
+                if " " in form:
+                    by_first[form.split(" ", 1)[0]].add(k)
+        return by_first
+
+    def _people_names(self, rehearsals: list[Rehearsal]) -> dict[str, str]:
+        """ключ -> как писать, для всех, кого можно выбрать при регистрации."""
+        return {self.key(n): n for n in self.registration_names(rehearsals)}
+
+    def resolve_typed(self, text: str, rehearsals: list[Rehearsal]) -> tuple[str | None, list[str]]:
+        """Имя, которое человек написал боту.
+
+        Возвращает (основное имя, []) при точном совпадении (регистр, «ё/е»,
+        точка после инициала и варианты из aliases.json не важны), или
+        (None, [варианты]), если имя без буквы фамилии подходит нескольким
+        людям («Миша» -> Миша К, Миша П), или (None, []), если имя не найдено.
+        Подстрочного поиска нет.
+        """
+        cleaned = text.strip().strip("!?,;:«»\"'()[] ")
+        if not cleaned or len(cleaned) > 40:
+            return None, []
+        names = self._people_names(rehearsals)
+        key = self.key(cleaned)
+        if key in names:
+            return names[key], []
+        bare = normalize(cleaned)
+        if " " in bare:
+            return None, []
+        candidates = sorted((names[k] for k in self._by_first_word(names).get(bare, ())),
+                            key=normalize)
+        if len(candidates) == 1:          # имя с буквой фамилии, но такое одно
+            return candidates[0], []
+        return None, candidates
+
+    def repeated_names(self, rehearsals: list[Rehearsal]) -> list[list[str]]:
+        """Группы людей, у которых совпадает имя: [[Миша К, Миша П], …]."""
+        names = self._people_names(rehearsals)
+        groups = {frozenset(keys) for keys in self._by_first_word(names).values()
+                  if len(keys) > 1}
+        result = [sorted((names[k] for k in g), key=normalize) for g in groups]
+        return sorted(result, key=lambda g: normalize(g[0]))
 
     def unknown(self, rehearsals: list[Rehearsal]) -> list[UnknownMention]:
         """Слова, которых нет ни в people.json, ни среди групп (кроме неоднозначных)."""

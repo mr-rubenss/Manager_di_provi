@@ -1,7 +1,8 @@
 [
   {"update_id": 1, "message": {"chat": {"id": 1001, "type": "private"}, "text": "/start"}},
-  {"update_id": 2, "callback_query": {"id": "b", "data": "n:соня",
-                                      "message": {"chat": {"id": 1001, "type": "private"}}}},
-  {"update_id": 3, "message": {"chat": {"id": 1001, "type": "private"}, "text": "/week"}},
-  {"update_id": 4, "message": {"chat": {"id": 1001, "type": "private"}, "text": "/stop"}}
+  {"update_id": 2, "message": {"chat": {"id": 1001, "type": "private"}, "text": "Миша"}},
+  {"update_id": 3, "message": {"chat": {"id": 1001, "type": "private"}, "text": "Петя"}},
+  {"update_id": 4, "message": {"chat": {"id": 1001, "type": "private"}, "text": "миша к"}},
+  {"update_id": 5, "message": {"chat": {"id": 1001, "type": "private"}, "text": "/week"}},
+  {"update_id": 6, "message": {"chat": {"id": 1001, "type": "private"}, "text": "/stop"}}
 ]

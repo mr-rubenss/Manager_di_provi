@@ -231,9 +231,9 @@ class LinaSvetaTest(unittest.TestCase):
         self.assertIn("Света", names)
         self.assertEqual(self.book.registration_names([]), names)    # даже при пустой таблице
 
-    def test_can_register_via_button(self):
-        for name in ("Лина", "Света"):
-            self.assertEqual(self.book.find_registration_name([], self.book.key(name)), name)
+    def test_can_register_by_typing(self):
+        for name in ("Лина", "Света", "лина", "СВЕТА"):
+            self.assertEqual(self.book.resolve_typed(name, [])[0], name.capitalize())
 
     def test_girls_groups_reach_them(self):
         subs = {"1": "Лина", "2": "Света", "3": "Тихон", "4": "Соня"}
@@ -247,6 +247,25 @@ class LinaSvetaTest(unittest.TestCase):
     def test_personal_rehearsal(self):
         got = daily_recipients([reh("Альба", "Света, Тихон")], {"1": "Лина", "2": "Света"})
         self.assertEqual(set(got), {2})
+
+
+class RepeatedNamesTest(unittest.TestCase):
+    def test_repeated_groups(self):
+        groups = NameBook.load().repeated_names([])
+        self.assertIn(["Миша К", "Миша П"], groups)
+        self.assertIn(["Василиса К.", "Василиса О"], groups)
+        flat = [n for g in groups for n in g]
+        for single in ("Соня", "Софа", "Лина", "Света", "Мира"):
+            self.assertNotIn(single, flat)
+
+    def test_resolve_never_merges_distinct(self):
+        b = NameBook.load()
+        self.assertEqual(b.resolve_typed("Миша", []), (None, ["Миша К", "Миша П"]))
+        self.assertEqual(b.resolve_typed("Вася", []), (None, ["Василиса К.", "Василиса О"]))
+        self.assertEqual(b.resolve_typed("Софа", [])[0], "Софа")
+        self.assertEqual(b.resolve_typed("Соня", [])[0], "Соня")
+        self.assertEqual(b.resolve_typed("Лиза", [])[0], "Соня")
+        self.assertEqual(b.resolve_typed("Сон", []), (None, []))     # без подстрок
 
 
 class PeopleFileTest(unittest.TestCase):

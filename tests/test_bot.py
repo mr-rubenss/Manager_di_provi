@@ -128,40 +128,99 @@ class FormatTest(unittest.TestCase):
 
 
 class FlowTest(unittest.TestCase):
-    def test_start_shows_names_then_register_then_stop(self):
+    def test_start_explains_and_asks_name(self):
         bot, api, store, tmp = make_bot([msg(1, "/start")])
         bot.poll()
-        chat, text, keyboard = api.sent[-1]
-        self.assertEqual(text, "Выбери своё имя, чтобы получать расписание репетиций")
-        labels = [b["text"] for row in keyboard for b in row]
-        self.assertIn("Соня", labels)
-        self.assertNotIn("Лиза", labels)
-        self.assertNotIn("Согласен", labels)
-        self.assertEqual(len(api.sent), 1)                         # только одно сообщение
-        self.assertEqual(store.subscribers, {})                    # до выбора имени — пусто
+        self.assertEqual(len(api.sent), 1)
+        chat, text, keyboard = api.sent[0]
+        self.assertIsNone(keyboard)                                 # без кнопок
+        for part in ("Что я умею", "/today", "/tomorrow", "/week", "/stop", "/start",
+                     "напиши своё имя", "первую букву фамилии", "Миша К или Миша П"):
+            self.assertIn(part, text)
+        self.assertEqual(store.subscribers, {})                    # до имени — пусто
         self.assertEqual(json.loads((tmp / "subscribers.json").read_text()), {})
 
-        api.updates = [cb(3, "n:" + bot.book.key("Соня"))]
+    def test_typed_name_register_then_stop(self):
+        bot, api, store, tmp = make_bot([msg(1, "/start"), msg(2, "Соня")])
         bot.poll()
         self.assertEqual(json.loads((tmp / "subscribers.json").read_text()), {"42": "Соня"})
-        self.assertEqual(json.loads((tmp / "state.json").read_text())["offset"], 4)
-        self.assertIn("«Соня»", api.sent[-1][1])
-
-        api.updates = [msg(4, "/stop")]
+        self.assertIn("ты записан(а) как «Соня»", api.sent[-1][1])
+        self.assertEqual(json.loads((tmp / "state.json").read_text())["offset"], 3)
+        api.updates = [msg(3, "/stop")]
         bot.poll()
         self.assertEqual(json.loads((tmp / "subscribers.json").read_text()), {})
+        self.assertIn("Твои данные удалены", api.sent[-1][1])
 
-    def test_old_agree_button_still_shows_names(self):
-        bot, api, store, _ = make_bot([cb(1, "agree")])
-        bot.poll()
-        self.assertEqual(api.sent[-1][1], "Выбери своё имя, чтобы получать расписание репетиций")
-        self.assertEqual(store.subscribers, {})
-
-    def test_start_again_changes_name(self):
-        bot, api, store, _ = make_bot([msg(1, "/start"), cb(2, "n:соня"),
-                                       msg(3, "/start"), cb(4, "n:софа")])
+    def test_name_without_start(self):
+        bot, api, store, _ = make_bot([msg(1, "Софа")])
         bot.poll()
         self.assertEqual(store.subscribers, {"42": "Софа"})
+
+    def test_typed_name_spelling(self):
+        cases = {"соня": "Соня", "СОНЯ": "Соня", "  Соня! ": "Соня", "Фёдор": "Фёдор",
+                 "федор": "Фёдор", "Федя": "Фёдор", "Лиза": "Соня", "миша к": "Миша К",
+                 "Миша К.": "Миша К", "Вася К": "Василиса К.", "василиса о": "Василиса О",
+                 "Лина": "Лина", "Света": "Света"}
+        for typed, expected in cases.items():
+            with self.subTest(typed=typed):
+                bot, api, store, _ = make_bot([msg(1, typed)])
+                bot.poll()
+                self.assertEqual(store.subscribers, {"42": expected})
+
+    def test_bare_repeated_name_asks_initial(self):
+        for typed, options in (("Миша", "Миша К, Миша П"),
+                               ("вася", "Василиса К., Василиса О"),
+                               ("Василиса", "Василиса К., Василиса О")):
+            with self.subTest(typed=typed):
+                bot, api, store, _ = make_bot([msg(1, typed)])
+                bot.poll()
+                self.assertEqual(store.subscribers, {})
+                self.assertIn(f"есть у нескольких человек: {options}", api.sent[-1][1])
+
+    def test_distinct_people_by_initial(self):
+        for typed, expected in (("Миша П", "Миша П"), ("Миша К", "Миша К"),
+                                ("Вася О", "Василиса О"), ("Софа", "Софа")):
+            bot, api, store, _ = make_bot([msg(1, typed)])
+            bot.poll()
+            self.assertEqual(store.subscribers, {"42": expected})
+
+    def test_unknown_name_not_saved(self):
+        for typed in ("Петя", "Мишаа", "Миш", "Соня Софа", "меня зовут Соня", "весь курс",
+                      "девушки", "?", "а" * 50):
+            with self.subTest(typed=typed):
+                bot, api, store, _ = make_bot([msg(1, typed)])
+                bot.poll()
+                self.assertEqual(store.subscribers, {})
+                self.assertIn("Не нашёл такого имени", api.sent[-1][1])
+
+    def test_change_name_by_typing(self):
+        bot, api, store, _ = make_bot([msg(1, "Соня"), msg(2, "/start"), msg(3, "Софа")])
+        bot.poll()
+        self.assertIn("Сейчас ты записан(а) как «Соня»", api.sent[1][1])
+        self.assertEqual(store.subscribers, {"42": "Софа"})
+        self.assertIn("Имя изменено", api.sent[-1][1])
+
+    def test_registered_unknown_text_keeps_name(self):
+        bot, api, store, _ = make_bot([msg(1, "Соня"), msg(2, "спасибо"), msg(3, "Соня")])
+        bot.poll()
+        self.assertEqual(store.subscribers, {"42": "Соня"})
+        self.assertIn("Не понял", api.sent[1][1])
+        self.assertIn("уже записан(а)", api.sent[2][1])
+
+    def test_unknown_command_shows_help(self):
+        bot, api, store, _ = make_bot([msg(1, "/help")])
+        bot.poll()
+        self.assertTrue(api.sent[-1][1].startswith("Команды:"))
+        self.assertEqual(store.subscribers, {})
+
+    def test_old_buttons_still_work(self):
+        bot, api, store, _ = make_bot([cb(1, "agree")])
+        bot.poll()
+        self.assertIn("напиши своё имя", api.sent[-1][1])
+        self.assertEqual(store.subscribers, {})
+        api.updates = [cb(2, "n:соня")]
+        bot.poll()
+        self.assertEqual(store.subscribers, {"42": "Соня"})
 
     def test_unknown_name_callback_not_saved(self):
         bot, api, store, _ = make_bot([cb(1, "n:миша")])
@@ -272,7 +331,7 @@ class DryRunTest(unittest.TestCase):
         store, snapshot = _dry_run_store(reset_offset=True)
         store.state["last_daily"] = None
         self.assertNotEqual(store.state_file.parent, bot_module.ROOT)
-        updates = [msg(1, "/start"), cb(3, "n:соня"), msg(4, "/tomorrow")]
+        updates = [msg(1, "/start"), msg(3, "соня"), msg(4, "/tomorrow")]
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             b = Bot(DryRunAPI(updates), store, NameBook.load(), lambda: SCHEDULE,
@@ -282,10 +341,8 @@ class DryRunTest(unittest.TestCase):
             b.send_daily()
         printed = out.getvalue()
         self.assertIn("[dry-run] сообщение в chat 42", printed)
-        self.assertIn("Выбери своё имя, чтобы получать расписание репетиций", printed)
-        self.assertIn("[Соня]", printed)
-        self.assertIn("[Лина]", printed)
-        self.assertIn("[Света]", printed)
+        self.assertIn("Что я умею", printed)
+        self.assertIn("ты записан(а) как «Соня»", printed)
         self.assertIn("РАСПИСАНИЕ РЕПЕТИЦИЙ 12.11.26:", printed)
         self.assertEqual(store.subscribers, {"42": "Соня"})       # только во временной копии
         after = [f.read_bytes() if f.exists() else None for f in repo_files]
