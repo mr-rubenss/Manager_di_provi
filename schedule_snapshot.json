@@ -270,29 +270,6 @@
       "end": "13:00",
       "participants": [
         {
-          "name": "Ева",
-          "note": null
-        },
-        {
-          "name": "Миша К",
-          "note": null
-        },
-        {
-          "name": "Гриша",
-          "note": null
-        }
-      ],
-      "room": "309",
-      "start": "12:00",
-      "time_raw": "12:00-13:00",
-      "title": "Карусель",
-      "weekday": "четверг"
-    },
-    {
-      "date": "2026-11-12",
-      "end": "13:00",
-      "participants": [
-        {
           "name": "Софа",
           "note": null
         },
@@ -390,14 +367,14 @@
           "note": null
         },
         {
-          "name": "Соня",
+          "name": "Арсений",
           "note": null
         }
       ],
       "room": "309",
       "start": "17:00",
       "time_raw": "17:00-17:50",
-      "title": "Эрнест",
+      "title": "драм Эрнест",
       "weekday": "четверг"
     },
     {
@@ -422,6 +399,37 @@
       "time_raw": "17:50-18:40",
       "title": "Муз.солдатик",
       "weekday": "четверг"
+    },
+    {
+      "date": "2026-11-13",
+      "end": "16:45",
+      "participants": [
+        {
+          "name": "Ди",
+          "note": null
+        },
+        {
+          "name": "Мира",
+          "note": null
+        },
+        {
+          "name": "Тихон",
+          "note": null
+        },
+        {
+          "name": "Гриша",
+          "note": null
+        },
+        {
+          "name": "Соня",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "15:50",
+      "time_raw": "15:50-16:45",
+      "title": "муз Эрнест",
+      "weekday": "пятница"
     },
     {
       "date": "2026-11-13",
