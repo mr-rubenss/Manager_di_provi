@@ -52,7 +52,7 @@ def make_bot(updates=None, now=datetime(2026, 11, 11, 21, 0)):
     api = FakeAPI(updates)
     clock = {"now": now}
     bot = Bot(api, store, NameBook.load(), lambda: SCHEDULE, lambda: clock["now"],
-              daily_hour=21)
+              daily_hour=21, snapshot_file=tmp / "schedule_snapshot.json")
     bot.clock = clock  # тесты двигают время: bot.clock["now"] = ...
     return bot, api, store, tmp
 

@@ -1,7 +1,8 @@
 """Telegram-бот расписания репетиций. Работает «по вызову» (GitHub Actions).
 
 Режимы:
-  python bot.py poll                 — обработать новые сообщения (getUpdates)
+  python bot.py poll                 — обработать новые сообщения (getUpdates),
+                                       затем проверить изменения в таблице
   python bot.py send_daily [--force] — разослать подписчикам репетиции на завтра;
                                        без --force только с 21:00 МСК и раз в сутки
   python bot.py run                  — poll + send_daily, если наступил час рассылки
@@ -14,18 +15,18 @@
 
 from __future__ import annotations
 
-import json
 import os
 import sys
-import tempfile
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
 import requests
 
+import changes as ch
 from names import NameBook
 from schedule_parser import Participant, Rehearsal, load_schedule
+from storage import read_json, write_json
 
 ROOT = Path(__file__).resolve().parent
 STATE_FILE = ROOT / "state.json"
@@ -108,22 +109,6 @@ class TelegramAPI:
 # Хранилище (JSON-файлы в репозитории)
 # --------------------------------------------------------------------------- #
 
-def read_json(path: Path, default):
-    try:
-        with path.open(encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return default
-
-
-def write_json(path: Path, data) -> None:
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2, sort_keys=True)
-        f.write("\n")
-    os.replace(tmp, path)
-
-
 class Store:
     def __init__(self, state_file: Path = STATE_FILE,
                  subscribers_file: Path = SUBSCRIBERS_FILE):
@@ -155,16 +140,48 @@ def format_participant(p: Participant) -> str:
     return p.name + "?" if p.note == "?" else f"{p.name} [{p.note}]"
 
 
+def format_line(r: Rehearsal) -> str:
+    people = ", ".join(format_participant(p) for p in r.participants)
+    return (f"{format_time(r)} {r.title} "
+            f"(задействованы: {people}; аудитория {r.room or 'не указана'})")
+
+
+def _by_time(r: Rehearsal):
+    return (r.start is None, r.start or datetime.min.time())
+
+
 def format_day(day: date, rehearsals: list[Rehearsal]) -> str:
     # sorted() стабилен: параллельные репетиции в одно время остаются
     # отдельными строками в порядке таблицы
-    items = sorted(rehearsals, key=lambda r: (r.start is None, r.start or datetime.min.time()))
-    lines = [f"РАСПИСАНИЕ РЕПЕТИЦИЙ {day:%d.%m.%y}:"]
-    for r in items:
-        people = ", ".join(format_participant(p) for p in r.participants)
-        lines.append(f"{format_time(r)} {r.title} "
-                     f"(задействованы: {people}; аудитория {r.room or 'не указана'})")
-    return "\n".join(lines)
+    items = sorted(rehearsals, key=_by_time)
+    return "\n".join([f"РАСПИСАНИЕ РЕПЕТИЦИЙ {day:%d.%m.%y}:"] + [format_line(r) for r in items])
+
+
+def format_changes(changes: list["ch.Change"]) -> str:
+    """Все изменения одного человека — одним сообщением, блоками по датам."""
+    blocks = []
+    for day in sorted({c.day for c in changes}):
+        lines = [f"ИЗМЕНЕНИЕ В РАСПИСАНИИ {day:%d.%m.%y}:"]
+        for c in (c for c in changes if c.day == day):
+            lines.append("было: " + (format_line(c.old) if c.old else "—"))
+            lines.append("стало: " + (format_line(c.new) if c.new else "отменено"))
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
+
+
+def split_message(text: str, limit: int = 4000) -> list[str]:
+    """Telegram принимает до 4096 символов: режем по абзацам, затем по строкам."""
+    parts, cur = [], ""
+    for line in text.split("\n"):
+        candidate = f"{cur}\n{line}" if cur else line
+        if len(candidate) > limit and cur:
+            parts.append(cur)
+            cur = line
+        else:
+            cur = candidate
+    if cur:
+        parts.append(cur)
+    return parts
 
 
 def rehearsals_for(name: str, day: date, schedule: list[Rehearsal],
@@ -188,7 +205,8 @@ class Bot:
     def __init__(self, api: TelegramAPI, store: Store, book: NameBook,
                  schedule_loader: Callable[[], list[Rehearsal]] = load_schedule,
                  now: Callable[[], datetime] = local_now,
-                 daily_hour: int = DAILY_HOUR):
+                 daily_hour: int = DAILY_HOUR,
+                 snapshot_file: Path = ch.SNAPSHOT_FILE):
         self.api = api
         self.store = store
         self.book = book
@@ -196,6 +214,7 @@ class Bot:
         self._schedule: list[Rehearsal] | None = None
         self.now = now
         self.daily_hour = daily_hour
+        self.snapshot_file = snapshot_file
 
     def today(self) -> date:
         return self.now().date()
@@ -327,17 +346,62 @@ class Bot:
             items = rehearsals_for(name, day, self.schedule, self.book)
             if not items:
                 continue
-            try:
-                self.api.send_message(int(chat_id), format_day(day, items))
+            if self._deliver(chat_id, format_day(day, items)):
                 sent += 1
-            except TelegramError as e:
+            else:
                 failed += 1
-                if e.code == 403:  # пользователь заблокировал бота — удаляем данные
-                    self.store.subscribers.pop(chat_id, None)
-                log(f"Не удалось отправить сообщение: {e}")
         self.store.state["last_daily"] = day.isoformat()
         self.store.save()
         log(f"Рассылка на {day:%d.%m.%y}: отправлено {sent}, ошибок {failed}")
+        return sent
+
+
+    def _deliver(self, chat_id: str, text: str) -> bool:
+        try:
+            for part in split_message(text):
+                self.api.send_message(int(chat_id), part)
+            return True
+        except TelegramError as e:
+            if e.code == 403:  # пользователь заблокировал бота — удаляем данные
+                self.store.subscribers.pop(chat_id, None)
+            log(f"Не удалось отправить сообщение: {e}")
+            return False
+
+    # -- изменения в расписании ----------------------------------------- #
+
+    def check_changes(self) -> int:
+        """Сравнивает таблицу со снимком и уведомляет затронутых подписчиков.
+
+        Таблица не скачалась или пустая — ничего не делаем и снимок не трогаем.
+        Снимка нет (первый запуск) — только создаём его.
+        """
+        try:
+            current = self.schedule
+        except Exception as e:
+            log(f"Таблица не скачалась ({type(e).__name__}), изменения не проверяю")
+            return 0
+        if not current:
+            log("Таблица пришла пустой, изменения не проверяю")
+            return 0
+
+        today = self.today()
+        new = ch.upcoming(current, today)
+        old = ch.load_snapshot(self.snapshot_file)
+        if old is None:
+            ch.save_snapshot(new, self.snapshot_file)
+            log(f"Создан снимок расписания: {len(new)} записей, уведомлений нет")
+            return 0
+
+        changes = ch.diff(ch.upcoming(old, today), new, self.book)
+        sent = 0
+        if changes:
+            for chat_id, name in list(self.store.subscribers.items()):
+                mine = [c for c in changes if ch.affected(c, name, self.book)]
+                if mine and self._deliver(chat_id, format_changes(mine)):
+                    sent += 1
+            self.store.save()
+        ch.save_snapshot(new, self.snapshot_file)
+        log(f"Изменений в расписании: {len(changes)}, уведомлено подписчиков: {sent}")
         return sent
 
 
@@ -371,6 +435,7 @@ def main(argv: list[str]) -> int:
     bot = Bot(TelegramAPI(os.environ.get("TELEGRAM_BOT_TOKEN", "")), Store(), NameBook.load())
     if mode in ("poll", "run"):
         log(f"Обработано обновлений: {bot.poll()}")
+        bot.check_changes()
     if mode == "send_daily":
         bot.send_daily(force="--force" in argv)
     elif mode == "run":
