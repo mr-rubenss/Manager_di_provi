@@ -24,7 +24,7 @@ from typing import Callable
 import requests
 
 import changes as ch
-from names import NameBook
+from names import NameBook, group_of
 from schedule_parser import Participant, Rehearsal, load_schedule
 from storage import read_json, write_json
 
@@ -137,6 +137,8 @@ def format_time(r: Rehearsal) -> str:
 def format_participant(p: Participant) -> str:
     if not p.note:
         return p.name
+    if group_of(p) is not None:
+        return f"{p.name} ({p.note})"  # группа — как в таблице: «хор (женщины)»
     return p.name + "?" if p.note == "?" else f"{p.name} [{p.note}]"
 
 
@@ -410,19 +412,39 @@ class Bot:
 # --------------------------------------------------------------------------- #
 
 def check_names() -> int:
+    """Печатает всё, что требует ручной проверки. Код выхода 1, если есть что проверять."""
     book = NameBook.load()
     schedule = load_schedule()
     print("Имена для регистрации:", ", ".join(book.registration_names(schedule)))
+    problems = 0
+
+    def where(r: Rehearsal) -> str:
+        return f"{r.date:%d.%m.%y} {format_time(r)} {r.title}, ауд. {r.room}"
+
     mentions = book.ambiguous(schedule)
-    if not mentions:
-        print("Неоднозначных имён нет.")
-        return 0
-    print("\nНУЖНО ПРОВЕРИТЬ — имя без буквы фамилии (рассылка по нему не идёт):")
-    for m in mentions:
-        r = m.rehearsal
-        print(f"  «{m.name}»: {r.date:%d.%m.%y} {format_time(r)} {r.title}, ауд. {r.room}"
-              f" — возможно: {' / '.join(m.candidates)}")
-    return 1
+    if mentions:
+        problems += 1
+        print("\nНЕОДНОЗНАЧНЫЕ — имя без буквы фамилии (рассылки по нему нет):")
+        for m in mentions:
+            print(f"  «{m.name}»: {where(m.rehearsal)} — возможно: {' / '.join(m.candidates)}")
+
+    unknown = book.unknown(schedule)
+    if unknown:
+        problems += 1
+        print("\nНЕПОНЯТНЫЕ — не человек из people.json и не группа (рассылки по ним нет).\n"
+              "Если это имя — добавь в people.json, если вариант имени — в aliases.json:")
+        for m in unknown:
+            print(f"  «{m.name}»: {where(m.rehearsal)}")
+
+    unsure = book.unknown_gender()
+    if unsure:
+        problems += 1
+        print("\nПОЛ «?» в people.json — рассылки «девушкам»/«парням» им нет:")
+        print("  " + ", ".join(unsure))
+
+    if not problems:
+        print("\nВсё в порядке, проверять нечего.")
+    return 1 if problems else 0
 
 
 def main(argv: list[str]) -> int:
