@@ -270,6 +270,29 @@
       "end": "13:00",
       "participants": [
         {
+          "name": "Ева",
+          "note": null
+        },
+        {
+          "name": "Миша К",
+          "note": null
+        },
+        {
+          "name": "Гриша",
+          "note": null
+        }
+      ],
+      "room": "309",
+      "start": "12:00",
+      "time_raw": "12:00-13:00",
+      "title": "Карусель",
+      "weekday": "четверг"
+    },
+    {
+      "date": "2026-11-12",
+      "end": "13:00",
+      "participants": [
+        {
           "name": "Софа",
           "note": null
         },
