@@ -242,16 +242,17 @@ class NameBook:
                       key=normalize)
 
     def registration_names(self, rehearsals: list[Rehearsal]) -> list[str]:
-        """Основные имена без повторов: из таблицы, есть в people.json, не группы
-        и не неоднозначные."""
+        """Имена для кнопок регистрации: основные имена без повторов.
+
+        С people.json — все люди из него, даже если в таблице их пока нет
+        (группы и неоднозначные имена туда не попадают). Без people.json —
+        имена из таблицы, кроме групп и неоднозначных.
+        """
+        if self._people is not None:
+            return sorted((display for display, _ in self._people.values()), key=normalize)
         names = self._display_names(rehearsals)
         bad = {self.key(m.name) for m in self.ambiguous(rehearsals)}
-        result = []
-        for k, display in names.items():
-            if k in bad or not self.is_known(display):
-                continue
-            result.append(self._people[k][0] if self._people is not None else display)
-        return sorted(result, key=normalize)
+        return sorted((v for k, v in names.items() if k not in bad), key=normalize)
 
     def find_registration_name(self, rehearsals: list[Rehearsal], key: str) -> str | None:
         for name in self.registration_names(rehearsals):

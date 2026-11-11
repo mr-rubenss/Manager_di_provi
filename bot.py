@@ -479,13 +479,21 @@ class DryRunAPI:
         return {}
 
 
-def _dry_run_store() -> tuple[Store, Path]:
-    """Копии state/subscribers/snapshot во временной папке — репозиторий не меняется."""
+def _dry_run_store(reset_offset: bool = False) -> tuple[Store, Path]:
+    """Копии state/subscribers/snapshot во временной папке — репозиторий не меняется.
+
+    reset_offset: обнулить offset в копии. Нужно для --updates: в настоящем
+    state.json offset реального бота (например 225635883), и тестовые сообщения
+    с номерами 1, 2, 3… иначе считались бы уже обработанными.
+    """
     tmp = Path(tempfile.mkdtemp(prefix="bot-dry-run-"))
     for f in (STATE_FILE, SUBSCRIBERS_FILE, ch.SNAPSHOT_FILE):
         if f.exists():
             shutil.copy(f, tmp / f.name)
-    return Store(tmp / STATE_FILE.name, tmp / SUBSCRIBERS_FILE.name), tmp / ch.SNAPSHOT_FILE.name
+    store = Store(tmp / STATE_FILE.name, tmp / SUBSCRIBERS_FILE.name)
+    if reset_offset:
+        store.state["offset"] = 0
+    return store, tmp / ch.SNAPSHOT_FILE.name
 
 
 def preview(name: str, day_str: str | None) -> int:
@@ -525,7 +533,7 @@ def main(argv: list[str]) -> int:
 
     if opts.dry_run:
         updates = read_json(opts.updates, []) if opts.updates else []
-        store, snapshot = _dry_run_store()
+        store, snapshot = _dry_run_store(reset_offset=bool(opts.updates))
         now = local_now
         if opts.now:
             fixed = datetime.strptime(opts.now, "%Y-%m-%d %H:%M")

@@ -59,7 +59,10 @@ class AliasesTest(unittest.TestCase):
         self.assertTrue(book.matches("Дианна", reh("x", "Ди, Мира")))
         self.assertTrue(book.matches("Тимофей", reh("x", "тима")))
         names = book.registration_names([reh("x", "Ди, Дианна, Тима, Тимофей")])
-        self.assertEqual(names, ["Дианна", "Тимофей"])
+        self.assertIn("Дианна", names)
+        self.assertIn("Тимофей", names)
+        self.assertNotIn("Ди", names)
+        self.assertNotIn("Тима", names)
 
 
 class GroupOfTest(unittest.TestCase):
@@ -144,7 +147,10 @@ class UnknownWordsTest(unittest.TestCase):
 
     def test_not_in_registration(self):
         names = self.book.registration_names(self.table + [reh("x", "весь курс, девушки")])
-        self.assertEqual(names, ["Миша К", "Соня"])
+        self.assertIn("Миша К", names)
+        self.assertIn("Соня", names)
+        for absent in ("концертмейстер", "Петя", "Миша", "весь курс", "девушки"):
+            self.assertNotIn(absent, names)
 
 
 class VasilisaTest(unittest.TestCase):
@@ -177,7 +183,11 @@ class VasilisaTest(unittest.TestCase):
     def test_registration_shows_main_names_once(self):
         names = self.book.registration_names(
             [reh("x", "Вася К, Василиса К., вася о, Василиса О, Мирослава, Мира")])
-        self.assertEqual(names, ["Василиса К.", "Василиса О", "Мира"])
+        self.assertEqual(len(names), len({self.book.key(n) for n in names}))  # без повторов
+        for present in ("Василиса К.", "Василиса О", "Мира"):
+            self.assertEqual(names.count(present), 1)
+        for absent in ("Вася К", "Вася О", "Мирослава"):
+            self.assertNotIn(absent, names)
 
     def test_bare_names_are_ambiguous(self):
         table = [reh("x", "Василиса, Вася, Василиса К.")]
@@ -187,6 +197,56 @@ class VasilisaTest(unittest.TestCase):
         self.assertEqual(self.book.unknown(table), [])          # не «непонятные»
         self.assertFalse(self.book.matches("Василиса К.", reh("x", "Вася")))
         self.assertFalse(self.book.matches("Василиса О", reh("x", "Василиса")))
+
+
+class LinaSvetaTest(unittest.TestCase):
+    """Лина и Света есть в people.json, но в таблице их может не быть."""
+
+    def setUp(self):
+        self.book = NameBook.load()
+
+    def test_in_people_as_girls(self):
+        for name in ("Лина", "Света"):
+            self.assertTrue(self.book.is_known(name))
+            self.assertEqual(self.book.gender(name), FEMALE)
+
+    def test_no_conflicts(self):
+        others = [n for n in json.loads(PEOPLE_FILE.read_text(encoding="utf-8"))
+                  if n not in ("Лина", "Света")]
+        aliases = json.loads(ALIASES_FILE.read_text(encoding="utf-8"))
+        for name in ("Лина", "Света"):
+            key = self.book.key(name)
+            self.assertEqual(key, name.lower())                      # не алиас
+            self.assertNotIn(key, {self.book.key(o) for o in others})
+            self.assertNotIn(name, aliases)
+            self.assertNotIn(name, aliases.values())
+            self.assertIsNone(group_of(Participant(name)))
+        self.assertNotEqual(self.book.key("Лина"), self.book.key("Лиза"))  # Лиза = Соня
+        self.assertFalse(self.book.matches("Лина", reh("x", "Лиза")))
+        self.assertFalse(self.book.matches("Соня", reh("x", "Лина")))
+
+    def test_in_registration_buttons_without_table(self):
+        names = self.book.registration_names([reh("x", "Тихон")])    # в таблице их нет
+        self.assertIn("Лина", names)
+        self.assertIn("Света", names)
+        self.assertEqual(self.book.registration_names([]), names)    # даже при пустой таблице
+
+    def test_can_register_via_button(self):
+        for name in ("Лина", "Света"):
+            self.assertEqual(self.book.find_registration_name([], self.book.key(name)), name)
+
+    def test_girls_groups_reach_them(self):
+        subs = {"1": "Лина", "2": "Света", "3": "Тихон", "4": "Соня"}
+        for group in ("девушки", "все девушки", "хор женщины", "хор (женщины)"):
+            with self.subTest(group=group):
+                self.assertEqual(set(daily_recipients([reh("Хор", group)], subs)), {1, 2, 4})
+        self.assertEqual(set(daily_recipients([reh("Хор", "хор (мужчины)")], subs)), {3})
+        self.assertEqual(set(daily_recipients([reh("Карусель", "весь курс")], subs)),
+                         {1, 2, 3, 4})
+
+    def test_personal_rehearsal(self):
+        got = daily_recipients([reh("Альба", "Света, Тихон")], {"1": "Лина", "2": "Света"})
+        self.assertEqual(set(got), {2})
 
 
 class PeopleFileTest(unittest.TestCase):

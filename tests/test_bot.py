@@ -249,6 +249,15 @@ if __name__ == "__main__":
 
 
 class DryRunTest(unittest.TestCase):
+    def test_reset_offset_only_in_copy(self):
+        import bot as bot_module
+        from bot import _dry_run_store
+        real = bot_module.STATE_FILE.read_text(encoding="utf-8")
+        store, _ = _dry_run_store(reset_offset=True)
+        self.assertEqual(store.state["offset"], 0)
+        store.save()
+        self.assertEqual(bot_module.STATE_FILE.read_text(encoding="utf-8"), real)
+
     def test_dry_run_touches_no_repo_files(self):
         import contextlib
         import io
@@ -258,7 +267,10 @@ class DryRunTest(unittest.TestCase):
 
         repo_files = [bot_module.STATE_FILE, bot_module.SUBSCRIBERS_FILE]
         before = [f.read_bytes() if f.exists() else None for f in repo_files]
-        store, snapshot = _dry_run_store()
+        # тест не зависит от настоящего state.json: offset обнуляется так же,
+        # как при --updates, а отметку о сегодняшней рассылке снимаем в копии
+        store, snapshot = _dry_run_store(reset_offset=True)
+        store.state["last_daily"] = None
         self.assertNotEqual(store.state_file.parent, bot_module.ROOT)
         updates = [msg(1, "/start"), cb(3, "n:соня"), msg(4, "/tomorrow")]
         out = io.StringIO()
@@ -272,6 +284,8 @@ class DryRunTest(unittest.TestCase):
         self.assertIn("[dry-run] сообщение в chat 42", printed)
         self.assertIn("Выбери своё имя, чтобы получать расписание репетиций", printed)
         self.assertIn("[Соня]", printed)
+        self.assertIn("[Лина]", printed)
+        self.assertIn("[Света]", printed)
         self.assertIn("РАСПИСАНИЕ РЕПЕТИЦИЙ 12.11.26:", printed)
         self.assertEqual(store.subscribers, {"42": "Соня"})       # только во временной копии
         after = [f.read_bytes() if f.exists() else None for f in repo_files]
