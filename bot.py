@@ -2,7 +2,8 @@
 
 Режимы:
   python bot.py poll                 — обработать новые сообщения (getUpdates)
-  python bot.py send_daily [--force] — разослать подписчикам репетиции на завтра
+  python bot.py send_daily [--force] — разослать подписчикам репетиции на завтра;
+                                       без --force только с 21:00 МСК и раз в сутки
   python bot.py run                  — poll + send_daily, если наступил час рассылки
                                        и она ещё не сделана (запасной путь для poll.yml)
   python bot.py check_names          — показать имена, которые нужно проверить
@@ -31,7 +32,7 @@ STATE_FILE = ROOT / "state.json"
 SUBSCRIBERS_FILE = ROOT / "subscribers.json"
 
 TZ_NAME = os.environ.get("BOT_TIMEZONE", "Europe/Moscow")
-DAILY_HOUR = int(os.environ.get("DAILY_HOUR", "21"))  # с этого часа run делает рассылку
+DAILY_HOUR = int(os.environ.get("DAILY_HOUR", "21"))  # рассылка — с 21:00 по BOT_TIMEZONE
 NAME_BUTTONS_PER_ROW = 3
 
 CONSENT_TEXT = (
@@ -183,20 +184,21 @@ def local_now() -> datetime:
         return datetime.now(timezone(timedelta(hours=3)))
 
 
-def local_today() -> date:
-    return local_now().date()
-
-
 class Bot:
     def __init__(self, api: TelegramAPI, store: Store, book: NameBook,
                  schedule_loader: Callable[[], list[Rehearsal]] = load_schedule,
-                 today: Callable[[], date] = local_today):
+                 now: Callable[[], datetime] = local_now,
+                 daily_hour: int = DAILY_HOUR):
         self.api = api
         self.store = store
         self.book = book
         self._loader = schedule_loader
         self._schedule: list[Rehearsal] | None = None
-        self.today = today
+        self.now = now
+        self.daily_hour = daily_hour
+
+    def today(self) -> date:
+        return self.now().date()
 
     @property
     def schedule(self) -> list[Rehearsal]:
@@ -307,7 +309,16 @@ class Bot:
     # -- рассылка -------------------------------------------------------- #
 
     def send_daily(self, force: bool = False) -> int:
-        day = self.today() + timedelta(days=1)
+        """Рассылка на завтра: в первый запуск с daily_hour (21:00) и до полуночи.
+
+        Раньше 21:00 ничего не отправляется (запуск просто пропускается);
+        повторные запуски в тот же вечер отсекаются по last_daily.
+        """
+        now = self.now()
+        if not force and now.hour < self.daily_hour:
+            log(f"Сейчас {now:%H:%M}, рассылка только с {self.daily_hour:02d}:00 — пропускаю")
+            return 0
+        day = now.date() + timedelta(days=1)
         if not force and self.store.state.get("last_daily") == day.isoformat():
             log(f"Рассылка на {day:%d.%m.%y} уже была, пропускаю")
             return 0
@@ -362,8 +373,8 @@ def main(argv: list[str]) -> int:
         log(f"Обработано обновлений: {bot.poll()}")
     if mode == "send_daily":
         bot.send_daily(force="--force" in argv)
-    elif mode == "run" and local_now().hour >= DAILY_HOUR:
-        bot.send_daily()
+    elif mode == "run":
+        bot.send_daily()  # сам решит, пора ли (с 21:00 и ещё не отправлено)
     return 0
 
 

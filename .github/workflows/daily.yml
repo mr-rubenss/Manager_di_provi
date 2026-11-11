@@ -4,12 +4,18 @@ on:
   schedule:
     - cron: "0 18 * * *"    # 18:00 UTC = 21:00 МСК
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Отправить сейчас, даже до 21:00 МСК и повторно"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 # общая группа для poll и daily: запуски идут по очереди и не перезаписывают
-# state.json/subscribers.json друг друга; ожидающий запуск не отменяется
+# state.json/subscribers.json друг друга. Идущий запуск не прерывается; в очереди
+# GitHub держит только один ожидающий — поэтому poll подстраховывает рассылку.
 concurrency:
   group: telegram-bot-state
   cancel-in-progress: false
@@ -31,7 +37,9 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           BOT_TIMEZONE: Europe/Moscow
-        run: python bot.py send_daily
+          FORCE: ${{ inputs.force && '--force' || '' }}
+        # бот сам проверяет время: без --force шлёт только с 21:00 МСК и раз в сутки
+        run: python bot.py send_daily $FORCE
 
       - name: Commit state
         if: always()

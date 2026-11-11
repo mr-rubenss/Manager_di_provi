@@ -2,7 +2,7 @@ import json
 import traceback
 import tempfile
 import unittest
-from datetime import date, time
+from datetime import date, datetime, time
 from pathlib import Path
 
 import requests
@@ -46,11 +46,14 @@ class FakeAPI:
         self.sent.append((chat_id, text, keyboard))
 
 
-def make_bot(updates=None, today=date(2026, 11, 11)):
+def make_bot(updates=None, now=datetime(2026, 11, 11, 21, 0)):
     tmp = Path(tempfile.mkdtemp())
     store = Store(tmp / "state.json", tmp / "subscribers.json")
     api = FakeAPI(updates)
-    bot = Bot(api, store, NameBook.load(), lambda: SCHEDULE, lambda: today)
+    clock = {"now": now}
+    bot = Bot(api, store, NameBook.load(), lambda: SCHEDULE, lambda: clock["now"],
+              daily_hour=21)
+    bot.clock = clock  # тесты двигают время: bot.clock["now"] = ...
     return bot, api, store, tmp
 
 
@@ -155,7 +158,7 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(store.subscribers, {})
 
     def test_send_daily(self):
-        bot, api, store, _ = make_bot(today=date(2026, 11, 11))
+        bot, api, store, _ = make_bot(now=datetime(2026, 11, 11, 21, 0))
         store.subscribers = {"1": "Соня", "2": "Софа", "3": "Арсений", "4": "Фёдор"}
         bot.send_daily()
         sent = {c: t for c, t, _ in api.sent}
@@ -168,8 +171,46 @@ class FlowTest(unittest.TestCase):
         bot.send_daily()                                           # повтор в тот же день
         self.assertEqual(len(api.sent), 3)
 
+    def test_daily_only_from_21_msk(self):
+        bot, api, store, _ = make_bot(now=datetime(2026, 11, 11, 18, 0))
+        store.subscribers = {"1": "Соня"}
+        for t in ((18, 0), (20, 59)):                  # до 21:00 — ничего
+            bot.clock["now"] = datetime(2026, 11, 11, *t)
+            self.assertEqual(bot.send_daily(), 0)
+        self.assertEqual(api.sent, [])
+        self.assertIsNone(store.state["last_daily"])
+
+        bot.clock["now"] = datetime(2026, 11, 11, 21, 7)  # первый запуск после 21:00
+        self.assertEqual(bot.send_daily(), 1)
+        self.assertTrue(api.sent[0][1].startswith("РАСПИСАНИЕ РЕПЕТИЦИЙ 12.11.26:"))
+
+        for t in ((21, 12), (23, 55)):                 # следующие запуски — не шлют
+            bot.clock["now"] = datetime(2026, 11, 11, *t)
+            self.assertEqual(bot.send_daily(), 0)
+        self.assertEqual(len(api.sent), 1)
+
+        bot.clock["now"] = datetime(2026, 11, 12, 0, 30)  # после полуночи — уже не «вечер»
+        self.assertEqual(bot.send_daily(), 0)
+        self.assertEqual(len(api.sent), 1)
+
+    def test_daily_force_ignores_hour(self):
+        bot, api, store, _ = make_bot(now=datetime(2026, 11, 11, 12, 0))
+        store.subscribers = {"1": "Соня"}
+        self.assertEqual(bot.send_daily(force=True), 1)
+
+    def test_run_mode_polls_and_sends_after_21(self):
+        bot, api, store, _ = make_bot([msg(1, "/stop", chat_id=7)],
+                                      now=datetime(2026, 11, 11, 20, 55))
+        store.subscribers = {"1": "Соня"}
+        bot.poll(); bot.send_daily()                   # как `run` в 20:55
+        self.assertEqual([c for c, *_ in api.sent], [7])  # только ответ на /stop
+        bot.clock["now"] = datetime(2026, 11, 11, 21, 0)
+        bot.poll(); bot.send_daily()                   # как `run` в 21:00
+        self.assertEqual([c for c, *_ in api.sent], [7, 1])
+
     def test_today_command(self):
-        bot, api, store, _ = make_bot([msg(1, "/today"), msg(2, "/week")], today=D)
+        bot, api, store, _ = make_bot([msg(1, "/today"), msg(2, "/week")],
+                                      now=datetime(2026, 11, 12, 9, 0))
         store.subscribers = {"42": "Тамара"}
         bot.poll()
         self.assertIn("16:00-16:30 Войцек", api.sent[0][1])
