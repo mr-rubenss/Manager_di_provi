@@ -4,6 +4,7 @@
   python bot.py poll                 — обработать новые сообщения (getUpdates)
   python bot.py send_daily [--force] — разослать подписчикам репетиции на завтра
   python bot.py run                  — poll + send_daily, если наступил час рассылки
+                                       и она ещё не сделана (запасной путь для poll.yml)
   python bot.py check_names          — показать имена, которые нужно проверить
 
 Токен берётся только из переменной окружения TELEGRAM_BOT_TOKEN и нигде
@@ -30,7 +31,7 @@ STATE_FILE = ROOT / "state.json"
 SUBSCRIBERS_FILE = ROOT / "subscribers.json"
 
 TZ_NAME = os.environ.get("BOT_TIMEZONE", "Europe/Moscow")
-DAILY_HOUR = int(os.environ.get("DAILY_HOUR", "18"))  # для режима run
+DAILY_HOUR = int(os.environ.get("DAILY_HOUR", "21"))  # с этого часа run делает рассылку
 NAME_BUTTONS_PER_ROW = 3
 
 CONSENT_TEXT = (
