@@ -129,6 +129,21 @@
     },
     {
       "date": "2026-11-12",
+      "end": "19:30",
+      "participants": [
+        {
+          "name": "Ди + Софа",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "18:30",
+      "time_raw": "18:30–19:30",
+      "title": "Речь",
+      "weekday": "четверг"
+    },
+    {
+      "date": "2026-11-12",
       "end": "22:00",
       "participants": [
         {
@@ -217,37 +232,21 @@
     },
     {
       "date": "2026-11-13",
-      "end": "19:30",
+      "end": "19:00",
       "participants": [
         {
           "name": "Софа",
           "note": null
         },
         {
-          "name": "Гриша",
-          "note": null
-        },
-        {
-          "name": "Сеня",
-          "note": null
-        },
-        {
-          "name": "Федя",
-          "note": null
-        },
-        {
-          "name": "Миша П",
-          "note": null
-        },
-        {
-          "name": "Миша К",
+          "name": "Тихон",
           "note": null
         }
       ],
-      "room": "301",
-      "start": "18:30",
-      "time_raw": "18:30-19:30",
-      "title": "110 в тени",
+      "room": "309",
+      "start": "18:20",
+      "time_raw": "18:20-19:00",
+      "title": "Питер Пэн драм (Овчинникова)",
       "weekday": "пятница"
     },
     {
@@ -280,6 +279,41 @@
       "time_raw": "19:00–20:00",
       "title": "драм изгибы",
       "weekday": "пятница"
+    },
+    {
+      "date": "2026-11-14",
+      "end": "12:00",
+      "participants": [
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Гриша",
+          "note": null
+        },
+        {
+          "name": "Сеня",
+          "note": null
+        },
+        {
+          "name": "Федя",
+          "note": null
+        },
+        {
+          "name": "Миша П",
+          "note": null
+        },
+        {
+          "name": "Миша К",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "11:00",
+      "time_raw": "11:00-12:00",
+      "title": "110 в тени",
+      "weekday": "суббота"
     },
     {
       "date": "2026-11-14",
