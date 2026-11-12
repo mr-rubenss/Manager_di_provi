@@ -251,6 +251,25 @@
     },
     {
       "date": "2026-11-13",
+      "end": "15:30",
+      "participants": [
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Федя",
+          "note": null
+        }
+      ],
+      "room": "309",
+      "start": "14:30",
+      "time_raw": "14:30-15:30",
+      "title": "бесприданница",
+      "weekday": "пятница"
+    },
+    {
+      "date": "2026-11-13",
       "end": "15:50",
       "participants": [
         {
