@@ -217,6 +217,41 @@
     },
     {
       "date": "2026-11-13",
+      "end": "19:30",
+      "participants": [
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Гриша",
+          "note": null
+        },
+        {
+          "name": "Сеня",
+          "note": null
+        },
+        {
+          "name": "Федя",
+          "note": null
+        },
+        {
+          "name": "Миша П",
+          "note": null
+        },
+        {
+          "name": "Миша К",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "18:30",
+      "time_raw": "18:30-19:30",
+      "title": "110 в тени",
+      "weekday": "пятница"
+    },
+    {
+      "date": "2026-11-13",
       "end": "20:00",
       "participants": [
         {
