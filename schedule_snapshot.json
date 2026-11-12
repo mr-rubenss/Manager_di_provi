@@ -405,6 +405,29 @@
     },
     {
       "date": "2026-11-14",
+      "end": "14:00",
+      "participants": [
+        {
+          "name": "Тома",
+          "note": null
+        },
+        {
+          "name": "Ева",
+          "note": null
+        },
+        {
+          "name": "Миша К",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "13:00",
+      "time_raw": "13:00-14:00",
+      "title": "драм Лилиом",
+      "weekday": "суббота"
+    },
+    {
+      "date": "2026-11-14",
       "end": "16:30",
       "participants": [
         {
