@@ -205,6 +205,29 @@
     },
     {
       "date": "2026-11-13",
+      "end": "13:40",
+      "participants": [
+        {
+          "name": "Вася О",
+          "note": null
+        },
+        {
+          "name": "Мира",
+          "note": null
+        },
+        {
+          "name": "Миша П",
+          "note": null
+        }
+      ],
+      "room": "309",
+      "start": "13:00",
+      "time_raw": "13:00-13:40",
+      "title": "Эрнест",
+      "weekday": "пятница"
+    },
+    {
+      "date": "2026-11-13",
       "end": "14:30",
       "participants": [
         {
