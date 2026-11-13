@@ -482,6 +482,29 @@
       "time_raw": "18.00-19.00",
       "title": "Триумф любви муз (Овчинникова)",
       "weekday": "понедельник"
+    },
+    {
+      "date": "2026-11-16",
+      "end": "20:00",
+      "participants": [
+        {
+          "name": "Ева",
+          "note": null
+        },
+        {
+          "name": "Миша К",
+          "note": null
+        },
+        {
+          "name": "Федя",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "19:00",
+      "time_raw": "19:00-20:00",
+      "title": "Пробуждение весны (Завалкова)",
+      "weekday": "понедельник"
     }
   ],
   "source": "1kVfvZjTg28-gBQXUATRMetdhLhUGdL0dg4oxJSJ2fdw/Лист1"
