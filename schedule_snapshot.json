@@ -340,6 +340,33 @@
       "time_raw": "19:00-20:00",
       "title": "Пробуждение весны (Завалкова)",
       "weekday": "понедельник"
+    },
+    {
+      "date": "2026-11-20",
+      "end": "12:30",
+      "participants": [
+        {
+          "name": "София",
+          "note": null
+        },
+        {
+          "name": "Ева",
+          "note": null
+        },
+        {
+          "name": "Дианна",
+          "note": null
+        },
+        {
+          "name": "Мира",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "11:15",
+      "time_raw": "11:15-12:30",
+      "title": "речь (мира)",
+      "weekday": "пятница"
     }
   ],
   "source": "1kVfvZjTg28-gBQXUATRMetdhLhUGdL0dg4oxJSJ2fdw/Лист1"
