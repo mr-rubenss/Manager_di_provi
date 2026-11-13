@@ -406,6 +406,82 @@
       "time_raw": "15:30-16:30",
       "title": "Эрнест",
       "weekday": "суббота"
+    },
+    {
+      "date": "2026-11-16",
+      "end": "16:00",
+      "participants": [
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Тихон",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "15:30",
+      "time_raw": "15:30-16:00",
+      "title": "Питер Пэн драм (Овчинникова)",
+      "weekday": "понедельник"
+    },
+    {
+      "date": "2026-11-16",
+      "end": "17:00",
+      "participants": [
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Ева",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "16:00",
+      "time_raw": "16:00-17:00",
+      "title": "Триумф любви драм (Овчинникова)",
+      "weekday": "понедельник"
+    },
+    {
+      "date": "2026-11-16",
+      "end": "18:00",
+      "participants": [
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Соня",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "17:00",
+      "time_raw": "17.00-18.00",
+      "title": "Питер Пэн муз (Овчинникова)",
+      "weekday": "понедельник"
+    },
+    {
+      "date": "2026-11-16",
+      "end": "19:00",
+      "participants": [
+        {
+          "name": "Соня",
+          "note": null
+        },
+        {
+          "name": "Тома",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "18:00",
+      "time_raw": "18.00-19.00",
+      "title": "Триумф любви муз (Овчинникова)",
+      "weekday": "понедельник"
     }
   ],
   "source": "1kVfvZjTg28-gBQXUATRMetdhLhUGdL0dg4oxJSJ2fdw/Лист1"
