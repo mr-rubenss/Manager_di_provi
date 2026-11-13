@@ -1,263 +1,6 @@
 {
   "records": [
     {
-      "date": "2026-11-13",
-      "end": "12:00",
-      "participants": [
-        {
-          "name": "Ева",
-          "note": null
-        },
-        {
-          "name": "Софа",
-          "note": null
-        }
-      ],
-      "room": "309",
-      "start": "11:20",
-      "time_raw": "11:20-12:00",
-      "title": "карусель",
-      "weekday": "пятница"
-    },
-    {
-      "date": "2026-11-13",
-      "end": "13:40",
-      "participants": [
-        {
-          "name": "Вася О",
-          "note": null
-        },
-        {
-          "name": "Мира",
-          "note": null
-        },
-        {
-          "name": "Миша П",
-          "note": null
-        }
-      ],
-      "room": "309",
-      "start": "13:00",
-      "time_raw": "13:00-13:40",
-      "title": "Эрнест",
-      "weekday": "пятница"
-    },
-    {
-      "date": "2026-11-13",
-      "end": "15:00",
-      "participants": [
-        {
-          "name": "Тома",
-          "note": null
-        },
-        {
-          "name": "Ева",
-          "note": null
-        },
-        {
-          "name": "Миша К",
-          "note": null
-        }
-      ],
-      "room": "309",
-      "start": "14:30",
-      "time_raw": "14:30 - 15:00",
-      "title": "драм Лилиом",
-      "weekday": "пятница"
-    },
-    {
-      "date": "2026-11-13",
-      "end": "15:30",
-      "participants": [
-        {
-          "name": "Софа",
-          "note": null
-        },
-        {
-          "name": "Федя",
-          "note": null
-        }
-      ],
-      "room": "309",
-      "start": "14:30",
-      "time_raw": "14:30-15:30",
-      "title": "бесприданница",
-      "weekday": "пятница"
-    },
-    {
-      "date": "2026-11-13",
-      "end": "15:50",
-      "participants": [
-        {
-          "name": "Софа",
-          "note": null
-        },
-        {
-          "name": "Тихон",
-          "note": null
-        }
-      ],
-      "room": "309",
-      "start": "14:40",
-      "time_raw": "14:40-15:50",
-      "title": "Питер Пэн драм (Овчинникова)",
-      "weekday": "пятница"
-    },
-    {
-      "date": "2026-11-13",
-      "end": "16:45",
-      "participants": [
-        {
-          "name": "Ди",
-          "note": null
-        },
-        {
-          "name": "Мира",
-          "note": null
-        },
-        {
-          "name": "Тихон",
-          "note": null
-        },
-        {
-          "name": "Гриша",
-          "note": null
-        },
-        {
-          "name": "Соня",
-          "note": null
-        }
-      ],
-      "room": "301",
-      "start": "15:50",
-      "time_raw": "15:50-16:45",
-      "title": "муз Эрнест",
-      "weekday": "пятница"
-    },
-    {
-      "date": "2026-11-13",
-      "end": "19:00",
-      "participants": [
-        {
-          "name": "Арсений",
-          "note": null
-        },
-        {
-          "name": "Дианна",
-          "note": null
-        }
-      ],
-      "room": "301",
-      "start": "18:20",
-      "time_raw": "18:20-19:00",
-      "title": "солдатик драм",
-      "weekday": "пятница"
-    },
-    {
-      "date": "2026-11-13",
-      "end": "19:00",
-      "participants": [
-        {
-          "name": "Ева",
-          "note": null
-        },
-        {
-          "name": "Миша К",
-          "note": null
-        },
-        {
-          "name": "Тома",
-          "note": null
-        }
-      ],
-      "room": "301",
-      "start": "18:20",
-      "time_raw": "18:20-19:00",
-      "title": "драм Лилиом",
-      "weekday": "пятница"
-    },
-    {
-      "date": "2026-11-13",
-      "end": "20:00",
-      "participants": [
-        {
-          "name": "Ева",
-          "note": null
-        },
-        {
-          "name": "Софа",
-          "note": null
-        },
-        {
-          "name": "Гриша",
-          "note": null
-        },
-        {
-          "name": "Миша",
-          "note": null
-        },
-        {
-          "name": "Дея",
-          "note": null
-        }
-      ],
-      "room": "301",
-      "start": "19:00",
-      "time_raw": "19:00–20:00",
-      "title": "драм изгибы",
-      "weekday": "пятница"
-    },
-    {
-      "date": "2026-11-13",
-      "end": "20:00",
-      "participants": [
-        {
-          "name": "Миша П",
-          "note": null
-        },
-        {
-          "name": "Соня",
-          "note": null
-        },
-        {
-          "name": "Федя",
-          "note": null
-        },
-        {
-          "name": "Тима Вася К",
-          "note": "?"
-        }
-      ],
-      "room": "301",
-      "start": "19:00",
-      "time_raw": "19:00-20:00",
-      "title": "Войцек муз",
-      "weekday": "пятница"
-    },
-    {
-      "date": "2026-11-13",
-      "end": "21:00",
-      "participants": [
-        {
-          "name": "Ева",
-          "note": null
-        },
-        {
-          "name": "Софа",
-          "note": null
-        },
-        {
-          "name": "Федя",
-          "note": null
-        }
-      ],
-      "room": "301",
-      "start": "20:00",
-      "time_raw": "20:00-21:00",
-      "title": "карусель",
-      "weekday": "пятница"
-    },
-    {
       "date": "2026-11-14",
       "end": "12:00",
       "participants": [
@@ -479,6 +222,25 @@
       "time_raw": "15:30-16:30",
       "title": "Эрнест",
       "weekday": "суббота"
+    },
+    {
+      "date": "2026-11-16",
+      "end": "15:30",
+      "participants": [
+        {
+          "name": "Соня",
+          "note": null
+        },
+        {
+          "name": "Гриша",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "14:30",
+      "time_raw": "14:30-15:30",
+      "title": "Казанова",
+      "weekday": "понедельник"
     },
     {
       "date": "2026-11-16",
