@@ -309,6 +309,25 @@
     },
     {
       "date": "2026-11-14",
+      "end": "13:00",
+      "participants": [
+        {
+          "name": "Федя",
+          "note": null
+        },
+        {
+          "name": "Тома",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "12:00",
+      "time_raw": "12:00-13:00",
+      "title": "Старший сын (муз)",
+      "weekday": "суббота"
+    },
+    {
+      "date": "2026-11-14",
       "end": "14:00",
       "participants": [
         {
@@ -351,6 +370,60 @@
       "start": "13:00",
       "time_raw": "13:00-14:00",
       "title": "драм Лилиом",
+      "weekday": "суббота"
+    },
+    {
+      "date": "2026-11-14",
+      "end": "14:00",
+      "participants": [
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Федя",
+          "note": null
+        },
+        {
+          "name": "Даня",
+          "note": null
+        },
+        {
+          "name": "Василиса К.",
+          "note": null
+        },
+        {
+          "name": "Тихон",
+          "note": null
+        },
+        {
+          "name": "Тимофей",
+          "note": null
+        }
+      ],
+      "room": "309",
+      "start": "13:00",
+      "time_raw": "13:00-14:00",
+      "title": "Клоп",
+      "weekday": "суббота"
+    },
+    {
+      "date": "2026-11-14",
+      "end": "14:30",
+      "participants": [
+        {
+          "name": "Тихон",
+          "note": null
+        },
+        {
+          "name": "Тома",
+          "note": null
+        }
+      ],
+      "room": "309",
+      "start": "14:00",
+      "time_raw": "14:00-14:30",
+      "title": "Старший сын (драм)",
       "weekday": "суббота"
     },
     {
