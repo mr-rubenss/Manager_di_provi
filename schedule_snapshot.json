@@ -386,14 +386,14 @@
           "note": null
         },
         {
-          "name": "Софа",
+          "name": "Софа + Ева",
           "note": "по возможности"
         }
       ],
       "room": "301",
-      "start": "11:00",
-      "time_raw": "11:00 —12:00",
-      "title": "Изгибы драм",
+      "start": "10:30",
+      "time_raw": "10:30–12:00",
+      "title": "Изгибы драм+ муз",
       "weekday": "понедельник"
     },
     {
@@ -591,33 +591,6 @@
     },
     {
       "date": "2026-11-16",
-      "end": "19:00",
-      "participants": [
-        {
-          "name": "Ева",
-          "note": null
-        },
-        {
-          "name": "Софа",
-          "note": null
-        },
-        {
-          "name": "Дея",
-          "note": null
-        },
-        {
-          "name": "Миша К",
-          "note": null
-        }
-      ],
-      "room": "309",
-      "start": "18:00",
-      "time_raw": "18–19",
-      "title": "Изгибы муз",
-      "weekday": "понедельник"
-    },
-    {
-      "date": "2026-11-16",
       "end": "20:00",
       "participants": [
         {
@@ -764,6 +737,33 @@
     },
     {
       "date": "2026-11-18",
+      "end": "15:10",
+      "participants": [
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Ева",
+          "note": null
+        },
+        {
+          "name": "Миша К",
+          "note": null
+        },
+        {
+          "name": "Дея",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "14:20",
+      "time_raw": "14:20 —15:10",
+      "title": "Изгибы муз",
+      "weekday": "среда"
+    },
+    {
+      "date": "2026-11-18",
       "end": "16:00",
       "participants": [
         {
@@ -783,6 +783,37 @@
       "start": "15:00",
       "time_raw": "15;00-16;00",
       "title": "Хелоу Долли",
+      "weekday": "среда"
+    },
+    {
+      "date": "2026-11-18",
+      "end": "16:40",
+      "participants": [
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Ева",
+          "note": null
+        },
+        {
+          "name": "Гриша",
+          "note": null
+        },
+        {
+          "name": "Дея",
+          "note": null
+        },
+        {
+          "name": "Миша К",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "16:00",
+      "time_raw": "16:00–16:40",
+      "title": "Изгибы муз",
       "weekday": "среда"
     },
     {
