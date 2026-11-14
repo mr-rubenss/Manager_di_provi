@@ -428,6 +428,25 @@
     },
     {
       "date": "2026-11-16",
+      "end": "17:00",
+      "participants": [
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Федя",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "16:00",
+      "time_raw": "16:00-17:00",
+      "title": "бесприданница (муз)",
+      "weekday": "понедельник"
+    },
+    {
+      "date": "2026-11-16",
       "end": "18:00",
       "participants": [
         {
@@ -496,6 +515,106 @@
       "time_raw": "19:00-20:00",
       "title": "Пробуждение весны (Завалкова)",
       "weekday": "понедельник"
+    },
+    {
+      "date": "2026-11-16",
+      "end": "21:00",
+      "participants": [
+        {
+          "name": "Ева",
+          "note": null
+        },
+        {
+          "name": "Федя",
+          "note": null
+        },
+        {
+          "name": "Тихон",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "20:00",
+      "time_raw": "20:00-21:00",
+      "title": "Чикаго (муз)",
+      "weekday": "понедельник"
+    },
+    {
+      "date": "2026-11-16",
+      "end": "22:00",
+      "participants": [
+        {
+          "name": "Тома",
+          "note": null
+        },
+        {
+          "name": "Федя",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "21:00",
+      "time_raw": "21:00-22:00",
+      "title": "Старший сын (муз)",
+      "weekday": "понедельник"
+    },
+    {
+      "date": "2026-11-17",
+      "end": "18:00",
+      "participants": [
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Гриша",
+          "note": null
+        },
+        {
+          "name": "Миша П",
+          "note": null
+        },
+        {
+          "name": "Сеня",
+          "note": null
+        },
+        {
+          "name": "Федя",
+          "note": null
+        },
+        {
+          "name": "Миша К",
+          "note": null
+        }
+      ],
+      "room": "309",
+      "start": "17:00",
+      "time_raw": "17:00-18:00",
+      "title": "110 в тени",
+      "weekday": "вторник"
+    },
+    {
+      "date": "2026-11-17",
+      "end": "21:30",
+      "participants": [
+        {
+          "name": "Соня",
+          "note": null
+        },
+        {
+          "name": "Тима",
+          "note": null
+        },
+        {
+          "name": "Сеня",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "20:00",
+      "time_raw": "20:00-21:30",
+      "title": "изюминка муз",
+      "weekday": "вторник"
     },
     {
       "date": "2026-11-20",
