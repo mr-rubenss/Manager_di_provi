@@ -409,6 +409,33 @@
     },
     {
       "date": "2026-11-16",
+      "end": "16:30",
+      "participants": [
+        {
+          "name": "Ди",
+          "note": null
+        },
+        {
+          "name": "Мира",
+          "note": null
+        },
+        {
+          "name": "Гриша",
+          "note": null
+        },
+        {
+          "name": "Тихон",
+          "note": null
+        }
+      ],
+      "room": "309",
+      "start": "15:30",
+      "time_raw": "15:30 - 16:30",
+      "title": "драм Эрнест",
+      "weekday": "понедельник"
+    },
+    {
+      "date": "2026-11-16",
       "end": "17:00",
       "participants": [
         {
@@ -495,6 +522,29 @@
     },
     {
       "date": "2026-11-16",
+      "end": "19:00",
+      "participants": [
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Миша К",
+          "note": null
+        },
+        {
+          "name": "Даня.",
+          "note": null
+        }
+      ],
+      "room": "309",
+      "start": "18:00",
+      "time_raw": "18:00-19:00",
+      "title": "Хелоу Долли",
+      "weekday": "понедельник"
+    },
+    {
+      "date": "2026-11-16",
       "end": "20:00",
       "participants": [
         {
@@ -563,6 +613,29 @@
       "end": "18:00",
       "participants": [
         {
+          "name": "Даня",
+          "note": null
+        },
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Миша.К",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "16:45",
+      "time_raw": "16:45- 18:00",
+      "title": "Хелоу Долли (муз)",
+      "weekday": "вторник"
+    },
+    {
+      "date": "2026-11-17",
+      "end": "18:00",
+      "participants": [
+        {
           "name": "Софа",
           "note": null
         },
@@ -615,6 +688,29 @@
       "time_raw": "20:00-21:30",
       "title": "изюминка муз",
       "weekday": "вторник"
+    },
+    {
+      "date": "2026-11-18",
+      "end": "16:00",
+      "participants": [
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Миша.К",
+          "note": null
+        },
+        {
+          "name": "Даня",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "15:00",
+      "time_raw": "15;00-16;00",
+      "title": "Хелоу Долли",
+      "weekday": "среда"
     },
     {
       "date": "2026-11-20",
