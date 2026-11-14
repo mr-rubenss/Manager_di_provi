@@ -371,6 +371,33 @@
     },
     {
       "date": "2026-11-16",
+      "end": "12:00",
+      "participants": [
+        {
+          "name": "Гриша",
+          "note": null
+        },
+        {
+          "name": "Миша К",
+          "note": null
+        },
+        {
+          "name": "Дея",
+          "note": null
+        },
+        {
+          "name": "Софа",
+          "note": "по возможности"
+        }
+      ],
+      "room": "301",
+      "start": "11:00",
+      "time_raw": "11:00 —12:00",
+      "title": "Изгибы драм",
+      "weekday": "понедельник"
+    },
+    {
+      "date": "2026-11-16",
       "end": "15:30",
       "participants": [
         {
@@ -560,6 +587,33 @@
       "start": "18:00",
       "time_raw": "18:00-19:00",
       "title": "Хелоу Долли",
+      "weekday": "понедельник"
+    },
+    {
+      "date": "2026-11-16",
+      "end": "19:00",
+      "participants": [
+        {
+          "name": "Ева",
+          "note": null
+        },
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Дея",
+          "note": null
+        },
+        {
+          "name": "Миша К",
+          "note": null
+        }
+      ],
+      "room": "309",
+      "start": "18:00",
+      "time_raw": "18–19",
+      "title": "Изгибы муз",
       "weekday": "понедельник"
     },
     {
