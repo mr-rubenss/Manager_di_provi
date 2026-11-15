@@ -245,6 +245,29 @@
     },
     {
       "date": "2026-11-16",
+      "end": "20:00",
+      "participants": [
+        {
+          "name": "Даниил",
+          "note": null
+        },
+        {
+          "name": "Лина",
+          "note": null
+        },
+        {
+          "name": "Василиса",
+          "note": null
+        }
+      ],
+      "room": "309",
+      "start": "19:00",
+      "time_raw": "19:00-20:00",
+      "title": "Оклахома",
+      "weekday": "понедельник"
+    },
+    {
+      "date": "2026-11-16",
       "end": "21:00",
       "participants": [
         {
@@ -445,6 +468,29 @@
       "start": "16:00",
       "time_raw": "16:00–16:40",
       "title": "Изгибы муз",
+      "weekday": "среда"
+    },
+    {
+      "date": "2026-11-18",
+      "end": "16:40",
+      "participants": [
+        {
+          "name": "Даниил",
+          "note": null
+        },
+        {
+          "name": "Василиса",
+          "note": null
+        },
+        {
+          "name": "Лина",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "16:00",
+      "time_raw": "16:00-16:40",
+      "title": "Оклахома",
       "weekday": "среда"
     },
     {
