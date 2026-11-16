@@ -532,6 +532,29 @@
       "weekday": "вторник"
     },
     {
+      "date": "2026-11-17",
+      "end": "22:00",
+      "participants": [
+        {
+          "name": "Ева",
+          "note": null
+        },
+        {
+          "name": "Федя",
+          "note": null
+        },
+        {
+          "name": "Тихон",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "21:30",
+      "time_raw": "21:30-22:00",
+      "title": "Чикаго (муз)",
+      "weekday": "вторник"
+    },
+    {
       "date": "2026-11-18",
       "end": "11:00",
       "participants": [
