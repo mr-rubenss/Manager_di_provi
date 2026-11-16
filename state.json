@@ -1,4 +1,7 @@
 {
+  "broadcast_hashes": [
+    "d618e2ad9d32da947e8af86f38bfd71d87a57863a73e4d6611b84a71ec23fb6d"
+  ],
   "commands_hash": "7f12207805df5c81",
   "last_daily": "2026-11-17",
   "offset": 225635980
