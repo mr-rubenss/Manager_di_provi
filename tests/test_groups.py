@@ -268,6 +268,44 @@ class RepeatedNamesTest(unittest.TestCase):
         self.assertEqual(b.resolve_typed("Сон", []), (None, []))     # без подстрок
 
 
+class NewAliasesTest(unittest.TestCase):
+    """Даниил = Даня, София = Софа, Сеня = Арсений."""
+
+    def setUp(self):
+        self.book = NameBook.load()
+
+    def test_variants_match(self):
+        for variant, main in (("Даниил", "Даня"), ("София", "Софа"), ("Сеня", "Арсений"),
+                              ("даниил", "Даня"), ("СОФИЯ", "Софа"), ("сеня", "Арсений")):
+            with self.subTest(variant=variant):
+                self.assertEqual(self.book.key(variant), self.book.key(main))
+                self.assertTrue(self.book.matches(main, reh("x", variant)))
+                self.assertEqual(self.book.resolve_typed(variant, [])[0], main)
+
+    def test_still_distinct(self):
+        for a, b in (("София", "Соня"), ("София", "Лиза"), ("Сеня", "Соня"),
+                     ("Даниил", "Дианна"), ("Сеня", "Софа")):
+            self.assertNotEqual(self.book.key(a), self.book.key(b), (a, b))
+        self.assertFalse(self.book.matches("Соня", reh("x", "София")))
+        self.assertFalse(self.book.matches("Софа", reh("x", "Соня")))
+
+    def test_gender_through_alias(self):
+        self.assertEqual(self.book.gender("София"), FEMALE)
+        self.assertEqual(self.book.gender("Даниил"), MALE)
+        self.assertEqual(self.book.gender("Сеня"), MALE)
+
+    def test_not_in_registration_list(self):
+        names = self.book.registration_names([reh("x", "Даниил, София, Сеня")])
+        for variant in ("Даниил", "София", "Сеня"):
+            self.assertNotIn(variant, names)
+        for main in ("Даня", "Софа", "Арсений"):
+            self.assertEqual(names.count(main), 1)
+
+    def test_no_unknown_words_left(self):
+        table = [reh("x", "Даниил, Лина, Василиса К"), reh("y", "София, Ева, Сеня")]
+        self.assertEqual(self.book.unknown(table), [])
+
+
 class TableWordsDontCreateAmbiguityTest(unittest.TestCase):
     """Регрессия: непонятное «Софа + Ева» в таблице сделало голое «Софа»
     неоднозначным, и Софа перестала получать свои репетиции."""
