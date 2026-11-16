@@ -334,7 +334,9 @@ class DryRunTest(unittest.TestCase):
         self.assertNotEqual(store.state_file.parent, bot_module.ROOT)
         updates = [msg(1, "/start"), msg(3, "соня"), msg(4, "/tomorrow")]
         out = io.StringIO()
-        with contextlib.redirect_stdout(out):
+        from unittest import mock
+        with contextlib.redirect_stdout(out), \
+                mock.patch.object(bot_module, "OUT_DIR", Path(tempfile.mkdtemp())):
             b = Bot(DryRunAPI(updates), store, NameBook.load(), lambda: SCHEDULE,
                     lambda: datetime(2026, 11, 11, 21, 5), snapshot_file=snapshot)
             b.poll()

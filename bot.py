@@ -9,6 +9,7 @@
                                        и она ещё не сделана (запасной путь для poll.yml)
   python bot.py check_names          — показать имена, которые нужно проверить
   python bot.py preview ИМЯ [дд.мм.гг] — показать, что придёт человеку (по умолчанию — завтра)
+  python bot.py image ИМЯ [дд.мм.гг]   — нарисовать картинку дня в out/preview.png
 
 Локальная проверка без отправки сообщений (токен не нужен):
   python bot.py run --dry-run [--now "2026-11-11 21:05"] [--updates examples/dry_run_updates.json]
@@ -45,6 +46,7 @@ from storage import read_json, write_json
 ROOT = Path(__file__).resolve().parent
 STATE_FILE = ROOT / "state.json"
 SUBSCRIBERS_FILE = ROOT / "subscribers.json"
+OUT_DIR = ROOT / "out"            # картинки для проверки (в .gitignore)
 
 TZ_NAME = os.environ.get("BOT_TIMEZONE", "Europe/Moscow")
 DAILY_HOUR = int(os.environ.get("DAILY_HOUR", "21"))  # рассылка — с 21:00 по BOT_TIMEZONE
@@ -132,10 +134,17 @@ class TelegramAPI:
         return "TelegramAPI(<TOKEN>)"
 
     def call(self, method: str, **params):
+        return self._post(method, json=params)
+
+    def send_photo(self, chat_id, png: bytes, filename: str = "schedule.png"):
+        """Картинка (multipart/form-data)."""
+        return self._post("sendPhoto", data={"chat_id": chat_id},
+                          files={"photo": (filename, png, "image/png")})
+
+    def _post(self, method: str, **request):
         error = None
         try:
-            resp = self._session.post(self._base + method, json=params,
-                                      timeout=self._timeout)
+            resp = self._session.post(self._base + method, timeout=self._timeout, **request)
             data = resp.json()
         except (requests.RequestException, ValueError) as e:
             # текст исключения requests содержит URL с токеном: чистим его и
@@ -765,8 +774,11 @@ class Bot:
             self.api.send_message(chat_id, "Напиши дату так: /date 18.11")
             return
         items = rehearsals_for(name, day, self.schedule, self.book)
-        self.api.send_message(chat_id, format_day(day, items) if items
-                              else f"{name}, на {day:%d.%m.%y} репетиций нет.")
+        if not items:
+            self.api.send_message(chat_id, f"{name}, на {day:%d.%m.%y} репетиций нет.")
+            return
+        self._send_photo(chat_id, name, day)
+        self.api.send_message(chat_id, format_day(day, items))
 
     def send_next(self, chat_id) -> None:
         name = self._need_name(chat_id)
@@ -824,6 +836,8 @@ class Bot:
                       "/week": "в ближайшие 7 дней"}[command]
             self.api.send_message(chat_id, f"{name}, {period} репетиций нет.")
             return
+        if command != "/week":                          # картинка — для одного дня
+            self._send_photo(chat_id, name, days[0])
         self.api.send_message(chat_id, "\n\n".join(blocks))
 
     # -- рассылка -------------------------------------------------------- #
@@ -849,6 +863,7 @@ class Bot:
             items = rehearsals_for(name, day, self.schedule, self.book)
             if not items:
                 continue
+            self._send_photo(chat_id, name, day)        # не вышло — текст всё равно
             if self._deliver(chat_id, format_day(day, items)):
                 sent += 1
             else:
@@ -858,6 +873,21 @@ class Bot:
         log(f"Рассылка на {day:%d.%m.%y}: отправлено {sent}, ошибок {failed}")
         return sent
 
+
+    def _send_photo(self, chat_id, name: str, day: date) -> bool:
+        """Картинка-сетка дня перед текстом. Любая ошибка (рисование, сеть,
+        Telegram) только пишется в лог: текст после неё отправляется всё равно."""
+        send = getattr(self.api, "send_photo", None)
+        if send is None:
+            return False
+        try:
+            from render_image import render_schedule_image
+            png = render_schedule_image(day, name, self.schedule, self.now(), book=self.book)
+            send(int(chat_id), png, filename=f"schedule-{day:%Y-%m-%d}.png")
+            return True
+        except Exception as e:  # noqa: BLE001 — картинка не должна мешать тексту
+            log(f"Картинка не отправлена: {type(e).__name__}: {e}")
+            return False
 
     def _deliver(self, chat_id: str, text: str) -> bool:
         try:
@@ -964,6 +994,13 @@ class DryRunAPI:
             return res
         return True
 
+    def send_photo(self, chat_id, png: bytes, filename: str = "schedule.png"):
+        OUT_DIR.mkdir(exist_ok=True)
+        path = OUT_DIR / f"dry-run-{chat_id}-{filename}"
+        path.write_bytes(png)
+        print(f"\n----- [dry-run] картинка в chat {chat_id}: {path} -----")
+        return {}
+
     def send_message(self, chat_id, text: str, keyboard: list | None = None):
         print(f"\n----- [dry-run] сообщение в chat {chat_id} -----\n{text}")
         for row in keyboard or []:
@@ -1001,12 +1038,39 @@ def preview(name: str, day_str: str | None) -> int:
     return 0
 
 
+def save_image(args: list[str]) -> int:
+    """python bot.py image ИМЯ [дд.мм.гг] -> out/preview.png (без Telegram)."""
+    from render_image import render_schedule_image
+    book = NameBook.load()
+    schedule = load_schedule()
+    day_arg = next((a for a in args if _DATE_ARG.fullmatch(a)), None)
+    typed = " ".join(a for a in args if a != day_arg)
+    name, candidates = book.resolve_typed(typed, schedule)
+    if name is None:
+        print(f"Имя «{typed}» неоднозначно: {', '.join(candidates)}" if candidates
+              else f"Не нашёл «{typed}» в people.json / aliases.json")
+        return 2
+    now = local_now()
+    day = (parse_ddmm(day_arg, now.date()) if day_arg else now.date() + timedelta(days=1))
+    if day is None:
+        print(f"Не понял дату «{day_arg}», нужно дд.мм.гг")
+        return 2
+    OUT_DIR.mkdir(exist_ok=True)
+    path = OUT_DIR / "preview.png"
+    path.write_bytes(render_schedule_image(day, name, schedule, now, book=book))
+    mine = len(rehearsals_for(name, day, schedule, book))
+    print(f"{path} — {name}, {day:%d.%m.%y}: репетиций у человека {mine}, "
+          f"всего в этот день {sum(1 for r in schedule if r.date == day)}"
+          + ("" if mine else " (в рассылке такая картинка не отправится)"))
+    return 0
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="bot.py", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("mode", nargs="?", default="run",
-                        choices=["poll", "send_daily", "run", "check_names", "preview"])
-    parser.add_argument("args", nargs="*", help="для preview: ИМЯ [дд.мм.гг]")
+                        choices=["poll", "send_daily", "run", "check_names", "preview", "image"])
+    parser.add_argument("args", nargs="*", help="для preview и image: ИМЯ [дд.мм.гг]")
     parser.add_argument("--force", action="store_true", help="send_daily: не ждать 21:00")
     parser.add_argument("--dry-run", action="store_true", help="ничего не отправлять и не сохранять")
     parser.add_argument("--updates", type=Path, help="dry-run: входящие сообщения из JSON-файла")
@@ -1015,6 +1079,10 @@ def main(argv: list[str]) -> int:
 
     if opts.mode == "check_names":
         return check_names()
+    if opts.mode == "image":
+        if not opts.args:
+            parser.error("image: укажи имя, например: image Соня 12.11.26")
+        return save_image(opts.args)
     if opts.mode == "preview":
         if not opts.args:
             parser.error("preview: укажи имя, например: preview Соня 12.11.26")
