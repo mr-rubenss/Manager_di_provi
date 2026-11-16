@@ -10,6 +10,8 @@
   python bot.py check_names          — показать имена, которые нужно проверить
   python bot.py preview ИМЯ [дд.мм.гг] — показать, что придёт человеку (по умолчанию — завтра)
   python bot.py image ИМЯ [дд.мм.гг]   — нарисовать картинку дня в out/preview.png
+  python bot.py broadcast [--send] [--force] — объявление из broadcast_message.txt всем
+                                       (без --send — только проверка)
 
 Локальная проверка без отправки сообщений (токен не нужен):
   python bot.py run --dry-run [--now "2026-11-11 21:05"] [--updates examples/dry_run_updates.json]
@@ -51,6 +53,7 @@ OUT_DIR = ROOT / "out"            # картинки для проверки (в
 TZ_NAME = os.environ.get("BOT_TIMEZONE", "Europe/Moscow")
 DAILY_HOUR = int(os.environ.get("DAILY_HOUR", "21"))  # рассылка — с 21:00 по BOT_TIMEZONE
 
+CAPTION_LIMIT = 1000   # Telegram: подпись к фото до 1024 символов; берём с запасом
 BUTTONS_PER_ROW = 3
 AWAIT_WHO_TTL = timedelta(hours=24)  # сколько ждать имя после /who без имени
 NOTHING_AT_TIME = "В это время репетиций нет"
@@ -136,9 +139,13 @@ class TelegramAPI:
     def call(self, method: str, **params):
         return self._post(method, json=params)
 
-    def send_photo(self, chat_id, png: bytes, filename: str = "schedule.png"):
-        """Картинка (multipart/form-data)."""
-        return self._post("sendPhoto", data={"chat_id": chat_id},
+    def send_photo(self, chat_id, png: bytes, filename: str = "schedule.png",
+                   caption: str | None = None):
+        """Картинка (multipart/form-data), подпись — обычный текст без parse_mode."""
+        data = {"chat_id": chat_id}
+        if caption:
+            data["caption"] = caption
+        return self._post("sendPhoto", data=data,
                           files={"photo": (filename, png, "image/png")})
 
     def _post(self, method: str, **request):
@@ -356,6 +363,11 @@ def format_free(room: str, day: date, schedule: list[Rehearsal]) -> str:
         lines.append("не учтены — нет времени окончания:")
         lines += [format_line(r) for r in unclear]
     return "\n".join(lines)
+
+
+def tg_len(text: str) -> int:
+    """Длина так, как её считает Telegram (UTF-16): эмодзи — 2 символа."""
+    return len(text.encode("utf-16-le")) // 2
 
 
 def keyboard(buttons: list[dict]) -> list[list[dict]]:
@@ -777,8 +789,7 @@ class Bot:
         if not items:
             self.api.send_message(chat_id, f"{name}, на {day:%d.%m.%y} репетиций нет.")
             return
-        self._send_photo(chat_id, name, day)
-        self.api.send_message(chat_id, format_day(day, items))
+        self._deliver_day(chat_id, name, day, format_day(day, items))
 
     def send_next(self, chat_id) -> None:
         name = self._need_name(chat_id)
@@ -836,9 +847,10 @@ class Bot:
                       "/week": "в ближайшие 7 дней"}[command]
             self.api.send_message(chat_id, f"{name}, {period} репетиций нет.")
             return
-        if command != "/week":                          # картинка — для одного дня
-            self._send_photo(chat_id, name, days[0])
-        self.api.send_message(chat_id, "\n\n".join(blocks))
+        if command == "/week":                          # картинка — только для одного дня
+            self.api.send_message(chat_id, "\n\n".join(blocks))
+        else:
+            self._deliver_day(chat_id, name, days[0], blocks[0])
 
     # -- рассылка -------------------------------------------------------- #
 
@@ -863,8 +875,7 @@ class Bot:
             items = rehearsals_for(name, day, self.schedule, self.book)
             if not items:
                 continue
-            self._send_photo(chat_id, name, day)        # не вышло — текст всё равно
-            if self._deliver(chat_id, format_day(day, items)):
+            if self._deliver_day(chat_id, name, day, format_day(day, items)):
                 sent += 1
             else:
                 failed += 1
@@ -874,20 +885,41 @@ class Bot:
         return sent
 
 
-    def _send_photo(self, chat_id, name: str, day: date) -> bool:
-        """Картинка-сетка дня перед текстом. Любая ошибка (рисование, сеть,
-        Telegram) только пишется в лог: текст после неё отправляется всё равно."""
-        send = getattr(self.api, "send_photo", None)
-        if send is None:
-            return False
+    def _render_day(self, name: str, day: date) -> bytes | None:
         try:
             from render_image import render_schedule_image
-            png = render_schedule_image(day, name, self.schedule, self.now(), book=self.book)
-            send(int(chat_id), png, filename=f"schedule-{day:%Y-%m-%d}.png")
-            return True
+            return render_schedule_image(day, name, self.schedule, self.now(), book=self.book)
         except Exception as e:  # noqa: BLE001 — картинка не должна мешать тексту
-            log(f"Картинка не отправлена: {type(e).__name__}: {e}")
-            return False
+            log(f"Картинка не нарисована: {type(e).__name__}: {e}")
+            return None
+
+    def _deliver_day(self, chat_id, name: str, day: date, text: str) -> bool:
+        """Расписание дня: картинка-сетка и текст.
+
+        * текст до CAPTION_LIMIT — одно сообщение: sendPhoto с подписью;
+        * длиннее — картинка без подписи, затем полный текст отдельным сообщением;
+        * sendPhoto не удался (или картинку не нарисовать) — текст отдельным сообщением.
+        Текст никогда не обрезается. True — если текст дошёл.
+        """
+        chat_id = str(chat_id)
+        send_photo = getattr(self.api, "send_photo", None)
+        png = self._render_day(name, day) if send_photo else None
+        if png is not None:
+            caption = text if tg_len(text) <= CAPTION_LIMIT else None
+            try:
+                send_photo(int(chat_id), png, filename=f"schedule-{day:%Y-%m-%d}.png",
+                           caption=caption)
+                if caption is not None:
+                    return True                      # всё в одном сообщении
+            except TelegramError as e:
+                if e.code == 403:                    # бот заблокирован — текст тоже не дойдёт
+                    self.store.subscribers.pop(chat_id, None)
+                    log(f"Не удалось отправить сообщение: {e}")
+                    return False
+                log(f"Картинка не отправлена: {e}")
+            except Exception as e:  # noqa: BLE001
+                log(f"Картинка не отправлена: {type(e).__name__}: {e}")
+        return self._deliver(chat_id, text)
 
     def _deliver(self, chat_id: str, text: str) -> bool:
         try:
@@ -994,11 +1026,14 @@ class DryRunAPI:
             return res
         return True
 
-    def send_photo(self, chat_id, png: bytes, filename: str = "schedule.png"):
+    def send_photo(self, chat_id, png: bytes, filename: str = "schedule.png",
+                   caption: str | None = None):
         OUT_DIR.mkdir(exist_ok=True)
         path = OUT_DIR / f"dry-run-{chat_id}-{filename}"
         path.write_bytes(png)
         print(f"\n----- [dry-run] картинка в chat {chat_id}: {path} -----")
+        if caption:
+            print(f"[подпись]\n{caption}")
         return {}
 
     def send_message(self, chat_id, text: str, keyboard: list | None = None):
@@ -1038,6 +1073,74 @@ def preview(name: str, day_str: str | None) -> int:
     return 0
 
 
+BROADCAST_FILE = ROOT / "broadcast_message.txt"
+BROADCAST_CAPTION_MAX = 1024       # лимит Telegram для подписи к фото
+BROADCAST_PAUSE = 0.1              # секунд между отправками
+
+
+def broadcast(send: bool, force: bool, api=None, store: Store | None = None,
+              text_file: Path = BROADCAST_FILE, banner: bytes | None = None,
+              sleep: Callable[[float], None] = None) -> int:
+    """Разовое объявление всем подписчикам (и тем, у кого /mute):
+    одно сообщение — sendPhoto с баннером и текстом в подписи.
+
+    send=False — проверка: текст, длина, число получателей; ничего не отправляется.
+    Повтор того же текста блокируется хэшем в state.json (broadcast_hashes),
+    force=True разрешает отправить ещё раз. В лог — только счётчики.
+    """
+    import time as time_module
+    sleep = sleep or time_module.sleep
+    store = store or Store()
+    text = text_file.read_text(encoding="utf-8").strip()
+    length = tg_len(text)
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    already = digest in store.state.get("broadcast_hashes", [])
+    recipients = list(store.subscribers)
+
+    print("----- текст объявления -----")
+    print(text)
+    print("----------------------------")
+    print(f"Длина: {length} из {BROADCAST_CAPTION_MAX} (как считает Telegram)")
+    print(f"Получателей: {len(recipients)} (включая тех, у кого /mute)")
+    if already:
+        print("Этот текст уже рассылался" + (" — force: отправлю ещё раз" if force else ""))
+    if not text or length > BROADCAST_CAPTION_MAX:
+        print("Ошибка: текст пустой или длиннее лимита подписи — не отправляю")
+        return 2
+    if not send:
+        print("Режим проверки: ничего не отправлено (для отправки — send=true)")
+        return 0
+    if already and not force:
+        print("Повтор не отправляю. Чтобы отправить ещё раз, включи force.")
+        return 0
+
+    if banner is None:
+        from render_banner import BANNER_FILE, render_banner
+        banner = BANNER_FILE.read_bytes() if BANNER_FILE.exists() else render_banner()
+    api = api or TelegramAPI(os.environ.get("TELEGRAM_BOT_TOKEN", ""))
+    sent = failed = 0
+    try:
+        for i, chat in enumerate(recipients):
+            if i:
+                sleep(BROADCAST_PAUSE)
+            try:
+                api.send_photo(int(chat), banner, filename="update.png", caption=text)
+                sent += 1
+            except TelegramError as e:
+                failed += 1
+                if e.code == 403:                # заблокировал бота — удаляем, как в рассылке
+                    store.subscribers.pop(chat, None)
+    finally:
+        if sent:
+            hashes = store.state.get("broadcast_hashes", [])
+            if digest not in hashes:
+                hashes.append(digest)
+            store.state["broadcast_hashes"] = hashes
+        store.save()
+        log(f"Объявление: отправлено {sent}, не удалось {failed}")
+    return 0
+
+
 def save_image(args: list[str]) -> int:
     """python bot.py image ИМЯ [дд.мм.гг] -> out/preview.png (без Telegram)."""
     from render_image import render_schedule_image
@@ -1069,9 +1172,12 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="bot.py", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("mode", nargs="?", default="run",
-                        choices=["poll", "send_daily", "run", "check_names", "preview", "image"])
+                        choices=["poll", "send_daily", "run", "check_names", "preview", "image",
+                                 "broadcast"])
+    parser.add_argument("--send", action="store_true", help="broadcast: отправить (иначе проверка)")
     parser.add_argument("args", nargs="*", help="для preview и image: ИМЯ [дд.мм.гг]")
-    parser.add_argument("--force", action="store_true", help="send_daily: не ждать 21:00")
+    parser.add_argument("--force", action="store_true",
+                        help="send_daily: не ждать 21:00; broadcast: отправить повторно")
     parser.add_argument("--dry-run", action="store_true", help="ничего не отправлять и не сохранять")
     parser.add_argument("--updates", type=Path, help="dry-run: входящие сообщения из JSON-файла")
     parser.add_argument("--now", help='dry-run: подменить время, «ГГГГ-ММ-ДД ЧЧ:ММ» (МСК)')
@@ -1079,6 +1185,8 @@ def main(argv: list[str]) -> int:
 
     if opts.mode == "check_names":
         return check_names()
+    if opts.mode == "broadcast":
+        return broadcast(send=opts.send, force=opts.force)
     if opts.mode == "image":
         if not opts.args:
             parser.error("image: укажи имя, например: image Соня 12.11.26")

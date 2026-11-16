@@ -173,10 +173,11 @@ class PhotoAPI:
             return res
         return True
 
-    def send_photo(self, chat_id, png, filename="schedule.png"):
+    def send_photo(self, chat_id, png, filename="schedule.png", caption=None):
         if self.fail_photo:
-            raise TelegramError("sendPhoto: Bad Request")
-        self.events.append(("photo", chat_id, png[:8], filename))
+            raise TelegramError("sendPhoto: Bad Request",
+                                403 if self.fail_photo == 403 else 400)
+        self.events.append(("photo", chat_id, png[:8], filename, caption))
 
     def send_message(self, chat_id, text, keyboard=None):
         self.events.append(("text", chat_id, text))
@@ -196,19 +197,58 @@ def msg(uid, text, chat=1):
 
 
 class SendPhotoTest(unittest.TestCase):
-    def test_daily_photo_then_text(self):
+    def test_daily_one_message_with_caption(self):
         b, api = make()
         b.send_daily()
-        kinds = [(e[0], e[1]) for e in api.events]
-        self.assertEqual(kinds, [("photo", 1), ("text", 1), ("photo", 2), ("text", 2)])
-        self.assertEqual(api.events[0][2], b"\x89PNG\r\n\x1a\n")
-        self.assertEqual(api.events[0][3], "schedule-2026-11-17.png")
+        self.assertEqual([(e[0], e[1]) for e in api.events], [("photo", 1), ("photo", 2)])
+        kind, chat, head, filename, caption = api.events[0]
+        self.assertEqual(head, b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(filename, "schedule-2026-11-17.png")
+        self.assertEqual(caption, "РАСПИСАНИЕ РЕПЕТИЦИЙ 17.11.26:\n"
+                                  "16:00-17:00 Альба (задействованы: Соня; аудитория 301)")
         self.assertNotIn(3, [e[1] for e in api.events])        # у Арсения пусто — ничего
+
+    def test_long_text_photo_then_full_text(self):
+        many = [reh(f"Отрывок с длинным названием номер {i}", "Соня, Ева, Тихон, Миша К, Миша П",
+                    time(9 + i // 2, 30 * (i % 2)), time(9 + i // 2, 30 * (i % 2) + 29))
+                for i in range(20)]
+        tmp = Path(tempfile.mkdtemp())
+        store = Store(tmp / "s.json", tmp / "subs.json")
+        store.subscribers = {"1": "Соня"}
+        api = PhotoAPI()
+        b = Bot(api, store, NameBook.load(), lambda: many, lambda: NOW, snapshot_file=tmp / "x.json")
+        b.send_daily()
+        self.assertEqual([e[0] for e in api.events], ["photo", "text"])
+        self.assertIsNone(api.events[0][4])                       # картинка без подписи
+        text = api.events[1][2]
+        self.assertGreater(bot_module.tg_len(text), bot_module.CAPTION_LIMIT)
+        self.assertEqual(text.count("Отрывок с длинным названием"), 20)   # полный, не обрезан
+        self.assertFalse(text.endswith("…"))
+
+    def test_caption_limit_boundary(self):
+        self.assertEqual(bot_module.tg_len("🎭"), 2)
+        b, api = make()
+        exact = "я" * bot_module.CAPTION_LIMIT
+        b._deliver_day(1, "Соня", D, exact)
+        self.assertEqual([(e[0], e[4]) for e in api.events], [("photo", exact)])
+        api.events.clear()
+        over = "я" * (bot_module.CAPTION_LIMIT - 1) + "🎭"           # 1001 по счёту Telegram
+        b._deliver_day(1, "Соня", D, over)
+        self.assertEqual([e[0] for e in api.events], ["photo", "text"])
+        self.assertIsNone(api.events[0][4])
+        self.assertEqual(api.events[1][2], over)
 
     def test_photo_failure_still_sends_text(self):
         b, api = make(fail_photo=True)
         self.assertEqual(b.send_daily(), 2)
         self.assertEqual([e[0] for e in api.events], ["text", "text"])
+        self.assertIn("16:00-17:00 Альба", api.events[0][2])
+
+    def test_blocked_user_removed_without_text_attempt(self):
+        b, api = make(fail_photo=403)
+        self.assertEqual(b.send_daily(), 0)
+        self.assertEqual(api.events, [])
+        self.assertNotIn("1", b.store.subscribers)
 
     def test_render_failure_still_sends_text(self):
         b, api = make()
@@ -218,15 +258,22 @@ class SendPhotoTest(unittest.TestCase):
 
     def test_commands(self):
         b, api = make(now=datetime(2026, 11, 16, 10, 0))
-        cases = {"/today": ["photo", "text"], "/tomorrow": ["photo", "text"],
-                 "/date 17.11": ["photo", "text"], "/week": ["text"],
-                 "/date 25.11": ["text"]}                     # пусто — без картинки
+        cases = {"/today": ["photo"], "/tomorrow": ["photo"], "/date 17.11": ["photo"],
+                 "/week": ["text"], "/date 25.11": ["text"]}   # пусто — без картинки
         for i, (cmd, expected) in enumerate(cases.items(), start=1):
             with self.subTest(cmd=cmd):
                 api.events.clear()
                 api.updates = [msg(i, cmd)]
                 b.poll()
                 self.assertEqual([e[0] for e in api.events], expected)
+                if expected == ["photo"]:
+                    self.assertTrue(api.events[0][4].startswith("РАСПИСАНИЕ РЕПЕТИЦИЙ"))
+
+    def test_commands_photo_failure_text_fallback(self):
+        b, api = make(now=datetime(2026, 11, 16, 10, 0), fail_photo=True)
+        api.updates = [msg(1, "/tomorrow")]
+        b.poll()
+        self.assertEqual([e[0] for e in api.events], ["text"])
 
     def test_no_rehearsals_no_photo(self):
         b, api = make(now=datetime(2026, 11, 16, 10, 0), subs={"3": "Арсений"})
@@ -257,6 +304,9 @@ class SendPhotoTest(unittest.TestCase):
         api.send_photo(7, b"\x89PNG", filename="x.png")
         self.assertTrue(captured["url"].endswith("/sendPhoto"))
         self.assertEqual(captured["data"], {"chat_id": 7})
+        api.send_photo(7, b"\x89PNG", filename="x.png", caption="Текст <b>как есть</b>")
+        self.assertEqual(captured["data"], {"chat_id": 7, "caption": "Текст <b>как есть</b>"})
+        self.assertNotIn("parse_mode", captured["data"])            # обычный текст
         self.assertEqual(captured["files"]["photo"], ("x.png", b"\x89PNG", "image/png"))
 
         class Broken:

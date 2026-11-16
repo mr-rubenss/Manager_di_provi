@@ -1,0 +1,59 @@
+name: Bot broadcast
+
+# Разовое объявление всем подписчикам: баннер assets/update_banner.png и текст
+# из broadcast_message.txt одним сообщением. Запускается только вручную.
+on:
+  workflow_dispatch:
+    inputs:
+      send:
+        description: "Отправить (выключено — только проверка: текст, длина, число получателей)"
+        type: boolean
+        default: false
+      force:
+        description: "Отправить повторно, даже если этот текст уже рассылался"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+# та же группа, что у poll и daily: не пересекаемся с ними по state.json/subscribers.json
+concurrency:
+  group: telegram-bot-state
+  cancel-in-progress: false
+
+jobs:
+  broadcast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - run: pip install -r requirements.txt
+
+      - name: Broadcast
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          SEND: ${{ inputs.send && '--send' || '' }}
+          FORCE: ${{ inputs.force && '--force' || '' }}
+        run: python bot.py broadcast $SEND $FORCE
+
+      - name: Commit state
+        if: always() && inputs.send
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state.json subscribers.json
+          if git diff --cached --quiet; then echo "Нет изменений"; exit 0; fi
+          git commit -m "Update bot state after broadcast [skip ci]"
+          for i in 1 2 3; do
+            git pull --rebase && git push && exit 0
+            sleep $((i * 5))
+          done
+          exit 1
