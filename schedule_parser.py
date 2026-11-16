@@ -232,8 +232,8 @@ _PARENS = re.compile(r"[(\[]([^)\]]*)[)\]]?")
 def parse_participants(raw: str) -> list[Participant]:
     """«Софа, Даня, (Василиса?)» -> [Софа, Даня, Василиса(note="?")]."""
     result = []
-    # перенос строки в ячейке, «;» и союз «и» — тоже разделители (но не в скобках)
-    raw = _outside_parens(raw or "", lambda t: re.sub(r"\s+и\s+", ",", re.sub(r"[\r\n;]+", ",", t)))
+    # перенос строки в ячейке, «;», «+» и союз «и» — тоже разделители (но не в скобках)
+    raw = _outside_parens(raw or "", lambda t: re.sub(r"\s+и\s+", ",", re.sub(r"[\r\n;+]+", ",", t)))
     for part in _split_top_level(_clean(raw)):
         part = _clean(part)
         if not part:

@@ -268,6 +268,27 @@ class RepeatedNamesTest(unittest.TestCase):
         self.assertEqual(b.resolve_typed("Сон", []), (None, []))     # без подстрок
 
 
+class TableWordsDontCreateAmbiguityTest(unittest.TestCase):
+    """Регрессия: непонятное «Софа + Ева» в таблице сделало голое «Софа»
+    неоднозначным, и Софа перестала получать свои репетиции."""
+
+    def test_unknown_multiword_is_not_a_candidate(self):
+        book = NameBook.load()
+        table = [reh("x", "Софа"), Rehearsal(date=D, weekday="", start=time(12), end=time(13),
+                                             time_raw="", title="y", room="301",
+                                             participants=[Participant("Софа + Ева")])]
+        self.assertEqual(book.ambiguous(table), [])
+        self.assertTrue(book.matches("Софа", table[0]))
+        self.assertEqual(set(daily_recipients([reh("Альба", "Софа + Ева")],
+                                              {"1": "Софа", "2": "Ева"})), {1, 2})
+
+    def test_matching_dotted_initial(self):
+        book = NameBook.load()
+        self.assertTrue(book.matches("Миша К", reh("x", "Миша.К, Даня.")))
+        self.assertTrue(book.matches("Даня", reh("x", "Миша.К, Даня.")))
+        self.assertFalse(book.matches("Миша П", reh("x", "Миша.К")))
+
+
 class PeopleFileTest(unittest.TestCase):
     def test_values_valid(self):
         data = json.loads(PEOPLE_FILE.read_text(encoding="utf-8"))

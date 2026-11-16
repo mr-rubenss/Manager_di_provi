@@ -330,6 +330,7 @@ class DryRunTest(unittest.TestCase):
         # как при --updates, а отметку о сегодняшней рассылке снимаем в копии
         store, snapshot = _dry_run_store(reset_offset=True)
         store.state["last_daily"] = None
+        store.subscribers = {}          # настоящие подписчики тесту не нужны
         self.assertNotEqual(store.state_file.parent, bot_module.ROOT)
         updates = [msg(1, "/start"), msg(3, "соня"), msg(4, "/tomorrow")]
         out = io.StringIO()

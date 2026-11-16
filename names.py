@@ -198,10 +198,13 @@ class NameBook:
         Учитываются и варианты из aliases.json: «Вася» неоднозначно, если
         «Вася К» -> «Василиса К.» и «Вася О» -> «Василиса О».
         """
-        names = self._display_names(rehearsals)
+        # Кандидаты — только известные люди (people.json и их варианты из
+        # aliases.json). Непонятные слова из таблицы («Софа + Ева») кандидатами
+        # не считаются, иначе голое «Софа» стало бы «неоднозначным».
         if self._people is not None:
-            for k, (display, _) in self._people.items():
-                names.setdefault(k, display)
+            names = {k: display for k, (display, _) in self._people.items()}
+        else:
+            names = self._display_names(rehearsals)
         by_first = self._by_first_word(names)
         found = []
         for r in rehearsals:

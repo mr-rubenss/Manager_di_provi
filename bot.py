@@ -29,7 +29,7 @@ import re
 import shutil
 import sys
 import tempfile
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -47,11 +47,19 @@ SUBSCRIBERS_FILE = ROOT / "subscribers.json"
 TZ_NAME = os.environ.get("BOT_TIMEZONE", "Europe/Moscow")
 DAILY_HOUR = int(os.environ.get("DAILY_HOUR", "21"))  # рассылка — с 21:00 по BOT_TIMEZONE
 
+BUTTONS_PER_ROW = 3
+AWAIT_WHO_TTL = timedelta(hours=24)  # сколько ждать имя после /who без имени
+NOTHING_AT_TIME = "В это время репетиций нет"
+
 HELP_TEXT = (
     "Команды:\n"
     "/today — мои репетиции сегодня\n"
     "/tomorrow — мои репетиции завтра\n"
     "/week — мои репетиции на 7 дней\n"
+    "/now — какие репетиции идут сейчас\n"
+    "/at ЧЧ:ММ [дд.мм] — что идёт в указанное время\n"
+    "/who [имя] — расписание человека на сегодня и завтра\n"
+    "/room [номер] [дд.мм] — репетиции в аудитории\n"
     "/stop — отписаться и удалить мои данные\n"
     "/start — что умеет бот и как сменить имя"
 )
@@ -60,7 +68,8 @@ ABOUT_TEXT = (
     "Что я умею:\n"
     "• каждый вечер после 21:00 присылаю твои репетиции на завтра;\n"
     "• сообщаю, если в расписании что-то поменялось;\n"
-    "• показываю твои репетиции по командам.\n\n"
+    "• показываю твои репетиции по командам;\n"
+    "• подскажу, что идёт сейчас, где чья репетиция и что в аудитории.\n\n"
     "Отвечаю не мгновенно: обычно в течение 5–60 минут."
 )
 
@@ -157,7 +166,7 @@ def format_participant(p: Participant) -> str:
 
 
 def format_line(r: Rehearsal) -> str:
-    people = ", ".join(format_participant(p) for p in r.participants)
+    people = ", ".join(format_participant(p) for p in r.participants) or "—"
     return (f"{format_time(r)} {r.title} "
             f"(задействованы: {people}; аудитория {r.room or 'не указана'})")
 
@@ -200,6 +209,53 @@ def split_message(text: str, limit: int = 4000) -> list[str]:
     return parts
 
 
+def format_block(header: str, items: list[Rehearsal], empty: str = "репетиций нет") -> str:
+    """Заголовок и строки как в расписании (по времени); пусто — строка `empty`."""
+    lines = [format_line(r) for r in sorted(items, key=_by_time)] or [empty]
+    return "\n".join([header] + lines)
+
+
+def running_at(schedule: list[Rehearsal], day: date, at: time) -> list[Rehearsal]:
+    """Репетиции, которые идут в момент `at`: начало <= at < конец.
+
+    Записи без времени конца сюда не попадают — бот не угадывает длительность.
+    """
+    return [r for r in schedule
+            if r.date == day and r.start is not None and r.end is not None
+            and r.start <= at < r.end]
+
+
+_HHMM = re.compile(r"(\d{1,2})[:.](\d{2})")
+_DDMM = re.compile(r"(\d{1,2})\.(\d{1,2})(?:\.(\d{2}|\d{4}))?")
+
+
+def parse_hhmm(token: str) -> time | None:
+    m = _HHMM.fullmatch(token.strip())
+    if not m:
+        return None
+    h, mi = int(m.group(1)), int(m.group(2))
+    return time(h, mi) if h <= 23 and mi <= 59 else None
+
+
+def parse_ddmm(token: str, today: date) -> date | None:
+    """«17.11», «17.11.26», «17.11.2026»; без года — текущий год."""
+    m = _DDMM.fullmatch(token.strip())
+    if not m:
+        return None
+    d, mo = int(m.group(1)), int(m.group(2))
+    y = m.group(3)
+    year = today.year if y is None else (int(y) + 2000 if len(y) == 2 else int(y))
+    try:
+        return date(year, mo, d)
+    except ValueError:
+        return None
+
+
+def keyboard(buttons: list[dict]) -> list[list[dict]]:
+    buttons = [b for b in buttons if len(b["callback_data"].encode()) <= 64]
+    return [buttons[i:i + BUTTONS_PER_ROW] for i in range(0, len(buttons), BUTTONS_PER_ROW)]
+
+
 def rehearsals_for(name: str, day: date, schedule: list[Rehearsal],
                    book: NameBook) -> list[Rehearsal]:
     return [r for r in schedule if r.date == day and book.matches(name, r)]
@@ -231,9 +287,18 @@ class Bot:
         self.now = now
         self.daily_hour = daily_hour
         self.snapshot_file = snapshot_file
+        self._request_now: datetime | None = None
 
     def today(self) -> date:
         return self.now().date()
+
+    def request_now(self) -> datetime:
+        """Время, когда человек отправил сообщение (по МСК), иначе — текущее.
+
+        Бот отвечает с задержкой, а «сейчас» и «сегодня» должны быть моментом
+        вопроса, а не моментом ответа.
+        """
+        return self._request_now or self.now()
 
     @property
     def schedule(self) -> list[Rehearsal]:
@@ -245,6 +310,9 @@ class Bot:
 
     def poll(self) -> int:
         handled = 0
+        if self.store.state.get("awaiting_who"):
+            self.cleanup_awaiting()      # chat_id не держим в state.json дольше суток
+            self.store.save()
         while True:
             updates = self.api.call("getUpdates", offset=self.store.state["offset"],
                                     timeout=0, limit=100,
@@ -271,10 +339,28 @@ class Bot:
         if chat.get("type") != "private" or not text:
             return
         chat_id = chat["id"]
+        self._request_now = self._message_time(msg)
         command = text.split()[0].split("@")[0].lower()
+        args = text.split()[1:]
+        awaiting_who = self._pop_awaiting_who(chat_id)  # любое сообщение снимает ожидание
 
         if not text.startswith("/"):
-            self.handle_name(chat_id, text)
+            if awaiting_who:
+                self.send_who(chat_id, text)
+            else:
+                self.handle_name(chat_id, text)
+        elif command == "/now":
+            now = self.request_now()
+            self.send_at(chat_id, now.date(), now.time().replace(second=0, microsecond=0))
+        elif command == "/at":
+            self.handle_at(chat_id, args)
+        elif command == "/who":
+            if args:
+                self.send_who(chat_id, " ".join(args))
+            else:
+                self.ask_who(chat_id)
+        elif command == "/room":
+            self.handle_room(chat_id, args)
         elif command == "/start":
             self.send_welcome(chat_id)
         elif command == "/stop":
@@ -300,6 +386,20 @@ class Bot:
             return
         chat_id = chat["id"]
         data = cq.get("data") or ""
+
+        self._request_now = None
+        if data.startswith("w:"):                       # /who: выбран человек
+            self._pop_awaiting_who(chat_id)
+            name = self.book.find_registration_name(self.schedule, data[2:])
+            if name is None:
+                self.api.send_message(chat_id, "Это имя больше не найдено. Попробуй /who ещё раз.")
+            else:
+                self.send_who_schedule(chat_id, name)
+            return
+        if data.startswith("r:"):                       # /room: выбрана аудитория
+            room, _, day = data[2:].partition(":")
+            self.send_room(chat_id, room, [date.fromisoformat(day)] if day else None)
+            return
 
         # Кнопки остались только в старых сообщениях: теперь имя пишут текстом.
         if data == "agree":
@@ -360,12 +460,139 @@ class Bot:
                                   "Напиши имя так, как оно записано в расписании, "
                                   "например: Соня или Миша К.")
 
+    # -- общие команды (регистрация не нужна) ------------------------- #
+
+    def _message_time(self, msg: dict) -> datetime | None:
+        ts = msg.get("date")
+        if not isinstance(ts, (int, float)):
+            return None
+        try:
+            from zoneinfo import ZoneInfo
+            return datetime.fromtimestamp(ts, ZoneInfo(TZ_NAME))
+        except Exception:
+            return datetime.fromtimestamp(ts, timezone(timedelta(hours=3)))
+
+    def _expired(self, since: str) -> bool:
+        try:
+            started = datetime.fromisoformat(since)
+        except (TypeError, ValueError):
+            return True
+        now = self.now()
+        if (started.tzinfo is None) != (now.tzinfo is None):
+            started, now = started.replace(tzinfo=None), now.replace(tzinfo=None)
+        return now - started > AWAIT_WHO_TTL
+
+    def _pop_awaiting_who(self, chat_id) -> bool:
+        """Ждали ли от этого чата имя после /who. Ожидание снимается в любом случае,
+        просроченные записи чистятся; пустой словарь в state.json не хранится."""
+        waiting: dict = self.store.state.get("awaiting_who") or {}
+        since = waiting.pop(str(chat_id), None)
+        self.cleanup_awaiting()
+        return since is not None and not self._expired(since)
+
+    def cleanup_awaiting(self) -> None:
+        """Удаляет просроченные ожидания /who; пустой словарь в state.json не хранится."""
+        waiting: dict = self.store.state.get("awaiting_who") or {}
+        for chat, started in list(waiting.items()):
+            if self._expired(started):
+                waiting.pop(chat)
+        if waiting:
+            self.store.state["awaiting_who"] = waiting
+        else:
+            self.store.state.pop("awaiting_who", None)
+
+    def send_at(self, chat_id, day: date, at: time) -> None:
+        items = running_at(self.schedule, day, at)
+        if not items:
+            self.api.send_message(chat_id, NOTHING_AT_TIME)
+            return
+        self.api.send_message(chat_id, format_block(
+            f"РЕПЕТИЦИИ {day:%d.%m.%y} В {at:%H:%M}:", items))
+
+    def handle_at(self, chat_id, args: list[str]) -> None:
+        today = self.request_now().date()
+        # «17.11» похоже и на время 17:11, и на дату: время с «:» — всегда время;
+        # без «:» первое — время, второе — дата
+        time_tok = next((a for a in args if ":" in a), args[0] if args else "")
+        rest = [a for a in args if a is not time_tok]
+        at = parse_hhmm(time_tok)
+        day = parse_ddmm(rest[0], today) if rest else today
+        if at is None or day is None or len(args) > 2:
+            self.api.send_message(chat_id, "Напиши время так: /at 16:30 или /at 16:30 17.11")
+            return
+        self.send_at(chat_id, day, at)
+
+    def ask_who(self, chat_id) -> None:
+        names = self.book.registration_names(self.schedule)
+        waiting = self.store.state.get("awaiting_who") or {}
+        waiting[str(chat_id)] = self.now().isoformat(timespec="seconds")
+        self.store.state["awaiting_who"] = waiting
+        self.store.save()
+        self.api.send_message(
+            chat_id, "Чьё расписание показать? Нажми имя или напиши его следующим сообщением.",
+            keyboard([{"text": n, "callback_data": "w:" + self.book.key(n)} for n in names]))
+
+    def send_who(self, chat_id, text: str) -> None:
+        name, candidates = self.book.resolve_typed(text, self.schedule)
+        if name is not None:
+            self.send_who_schedule(chat_id, name)
+        elif candidates:
+            self.api.send_message(
+                chat_id, "Это имя есть у нескольких человек. Кого показать?",
+                keyboard([{"text": n, "callback_data": "w:" + self.book.key(n)}
+                          for n in candidates]))
+        else:
+            self.api.send_message(chat_id, "Не нашёл такого имени среди участников. "
+                                  "Отправь /who без имени, чтобы увидеть список.")
+
+    def send_who_schedule(self, chat_id, name: str) -> None:
+        today = self.request_now().date()
+        blocks = [format_block(f"РАСПИСАНИЕ {name} {d:%d.%m.%y}:",
+                               rehearsals_for(name, d, self.schedule, self.book))
+                  for d in (today, today + timedelta(days=1))]
+        self.api.send_message(chat_id, "\n\n".join(blocks))
+
+    def rooms(self) -> list[str]:
+        rooms = {r.room for r in self.schedule if r.room}
+        return sorted(rooms, key=lambda x: (not x.isdigit(), int(x) if x.isdigit() else 0, x))
+
+    def handle_room(self, chat_id, args: list[str]) -> None:
+        today = self.request_now().date()
+        day = next((d for d in (parse_ddmm(a, today) for a in args) if d), None)
+        room = next((a for a in args if parse_ddmm(a, today) is None), None)
+        if room is None:
+            rooms = self.rooms()
+            if not rooms:
+                self.api.send_message(chat_id, "В расписании пока нет аудиторий.")
+                return
+            suffix = f":{day.isoformat()}" if day else ""
+            self.api.send_message(chat_id, "Какая аудитория?", keyboard(
+                [{"text": r, "callback_data": f"r:{r}{suffix}"} for r in rooms]))
+            return
+        self.send_room(chat_id, room, [day] if day else None)
+
+    def send_room(self, chat_id, room: str, days: list[date] | None) -> None:
+        room = room.strip()
+        if room not in self.rooms():
+            self.api.send_message(chat_id, f"Аудитории «{room}» нет в расписании. "
+                                  f"Есть: {', '.join(self.rooms()) or '—'}.")
+            return
+        if days is None:
+            today = self.request_now().date()
+            days = [today, today + timedelta(days=1)]
+        blocks = [format_block(f"АУДИТОРИЯ {room} {d:%d.%m.%y}:",
+                               [r for r in self.schedule if r.date == d and r.room == room])
+                  for d in days]
+        self.api.send_message(chat_id, "\n\n".join(blocks))
+
+    # -- личные команды ------------------------------------------------- #
+
     def send_personal(self, chat_id, command: str) -> None:
         name = self.store.subscribers.get(str(chat_id))
         if not name:
             self.api.send_message(chat_id, "Сначала зарегистрируйся: /start")
             return
-        today = self.today()
+        today = self.request_now().date()
         days = {"/today": [today], "/tomorrow": [today + timedelta(days=1)],
                 "/week": [today + timedelta(days=i) for i in range(7)]}[command]
         blocks = []
