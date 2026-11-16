@@ -24,6 +24,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -36,7 +38,7 @@ from typing import Callable
 import requests
 
 import changes as ch
-from names import NameBook, group_of
+from names import NameBook, group_of, normalize
 from schedule_parser import Participant, Rehearsal, load_schedule
 from storage import read_json, write_json
 
@@ -51,18 +53,43 @@ BUTTONS_PER_ROW = 3
 AWAIT_WHO_TTL = timedelta(hours=24)  # сколько ждать имя после /who без имени
 NOTHING_AT_TIME = "В это время репетиций нет"
 
-HELP_TEXT = (
-    "Команды:\n"
-    "/today — мои репетиции сегодня\n"
-    "/tomorrow — мои репетиции завтра\n"
-    "/week — мои репетиции на 7 дней\n"
-    "/now — какие репетиции идут сейчас\n"
-    "/at ЧЧ:ММ [дд.мм] — что идёт в указанное время\n"
-    "/who [имя] — расписание человека на сегодня и завтра\n"
-    "/room [номер] [дд.мм] — репетиции в аудитории\n"
-    "/stop — отписаться и удалить мои данные\n"
-    "/start — что умеет бот и как сменить имя"
-)
+# Рабочий день аудиторий для /free (по МСК); можно переопределить переменными окружения
+def _workday(var: str, default: str) -> str:
+    value = (os.environ.get(var) or "").strip()
+    if re.fullmatch(r"([01]?\d|2[0-3]):[0-5]\d", value):
+        return value.zfill(5)
+    return default        # пусто или неверный формат — значение по умолчанию
+
+
+WORKDAY_START = _workday("WORKDAY_START", "09:00")
+WORKDAY_END = _workday("WORKDAY_END", "22:00")
+FIND_LIMIT = 10  # сколько ближайших репетиций показывает /find
+
+# Единый список команд: из него строятся /help и меню команд Telegram (setMyCommands).
+# (команда, аргументы для /help, описание)
+COMMANDS = [
+    ("today", "", "мои репетиции сегодня"),
+    ("tomorrow", "", "мои репетиции завтра"),
+    ("week", "", "мои репетиции на 7 дней"),
+    ("date", "дд.мм", "мои репетиции на дату"),
+    ("next", "", "моя ближайшая репетиция"),
+    ("now", "", "какие репетиции идут сейчас"),
+    ("at", "ЧЧ:ММ [дд.мм]", "что идёт в указанное время"),
+    ("who", "[имя]", "расписание человека на сегодня и завтра"),
+    ("room", "[номер] [дд.мм]", "репетиции в аудитории"),
+    ("free", "[аудитория] [дд.мм]", "свободные окна аудитории"),
+    ("find", "название", "ближайшие репетиции отрывка"),
+    ("mute", "", "выключить вечернюю рассылку и уведомления"),
+    ("unmute", "", "включить вечернюю рассылку и уведомления"),
+    ("help", "", "список команд"),
+    ("start", "", "что умеет бот и как сменить имя"),
+    ("stop", "", "отписаться и удалить мои данные"),
+]
+HELP_TEXT = "Команды:\n" + "\n".join(
+    f"/{cmd}{' ' + args if args else ''} — {desc}" for cmd, args, desc in COMMANDS)
+TELEGRAM_COMMANDS = [{"command": cmd, "description": desc} for cmd, _, desc in COMMANDS]
+
+
 ABOUT_TEXT = (
     "Привет! Я присылаю расписание репетиций из общей таблицы.\n\n"
     "Что я умею:\n"
@@ -133,16 +160,37 @@ class TelegramAPI:
 # --------------------------------------------------------------------------- #
 
 class Store:
+    """state.json и subscribers.json.
+
+    В subscribers.json значение — имя («Соня») или, если человек выключил
+    рассылку командой /mute, объект {"name": "Соня", "muted": true}.
+    В памяти: subscribers — chat_id -> имя, muted — множество chat_id.
+    """
+
     def __init__(self, state_file: Path = STATE_FILE,
                  subscribers_file: Path = SUBSCRIBERS_FILE):
         self.state_file = state_file
         self.subscribers_file = subscribers_file
         self.state = {"offset": 0, "last_daily": None} | read_json(state_file, {})
-        self.subscribers: dict[str, str] = read_json(subscribers_file, {})
+        self.subscribers: dict[str, str] = {}
+        self.muted: set[str] = set()
+        for chat, value in read_json(subscribers_file, {}).items():
+            if isinstance(value, dict):
+                self.subscribers[chat] = value.get("name", "")
+                if value.get("muted"):
+                    self.muted.add(chat)
+            else:
+                self.subscribers[chat] = value
+
+    def is_muted(self, chat_id) -> bool:
+        return str(chat_id) in self.muted
 
     def save(self) -> None:
+        self.muted &= set(self.subscribers)  # /stop удаляет и флаг
+        data = {chat: ({"name": name, "muted": True} if chat in self.muted else name)
+                for chat, name in self.subscribers.items()}
         write_json(self.state_file, self.state)
-        write_json(self.subscribers_file, self.subscribers)
+        write_json(self.subscribers_file, data)
 
 
 # --------------------------------------------------------------------------- #
@@ -251,6 +299,56 @@ def parse_ddmm(token: str, today: date) -> date | None:
         return None
 
 
+def is_running(r: Rehearsal, now: datetime) -> bool:
+    return (r.date == now.date() and r.start is not None and r.end is not None
+            and r.start <= now.time() < r.end)
+
+
+def ended(r: Rehearsal, now: datetime) -> bool:
+    """Репетиция уже прошла. Сегодняшняя без времени считается непрошедшей."""
+    if r.date is None or r.date < now.date():
+        return True
+    if r.date > now.date():
+        return False
+    last = r.end or r.start
+    return last is not None and last <= now.time()
+
+
+def _hhmm(value: str) -> time:
+    h, m = value.split(":")
+    return time(int(h), int(m))
+
+
+def free_windows(room: str, day: date, schedule: list[Rehearsal],
+                 start: str = None, end: str = None) -> tuple[list[tuple[time, time]], list[Rehearsal]]:
+    """Свободные окна аудитории в рабочий день и записи без времени окончания
+    (их длительность неизвестна — они в расчёт не берутся и показываются отдельно)."""
+    day_start, day_end = _hhmm(start or WORKDAY_START), _hhmm(end or WORKDAY_END)
+    items = [r for r in schedule if r.date == day and r.room == room]
+    busy = sorted((max(r.start, day_start), min(r.end, day_end)) for r in items
+                  if r.start is not None and r.end is not None
+                  and r.end > day_start and r.start < day_end)
+    unclear = [r for r in items if r.start is None or r.end is None]
+    windows, cursor = [], day_start
+    for b_start, b_end in busy:
+        if b_start > cursor:
+            windows.append((cursor, b_start))
+        cursor = max(cursor, b_end)
+    if cursor < day_end:
+        windows.append((cursor, day_end))
+    return windows, unclear
+
+
+def format_free(room: str, day: date, schedule: list[Rehearsal]) -> str:
+    windows, unclear = free_windows(room, day, schedule)
+    lines = [f"СВОБОДНО {room} {day:%d.%m.%y} ({WORKDAY_START}–{WORKDAY_END}):"]
+    lines += [f"{a:%H:%M}-{b:%H:%M}" for a, b in windows] or ["свободных окон нет"]
+    if unclear:
+        lines.append("не учтены — нет времени окончания:")
+        lines += [format_line(r) for r in unclear]
+    return "\n".join(lines)
+
+
 def keyboard(buttons: list[dict]) -> list[list[dict]]:
     buttons = [b for b in buttons if len(b["callback_data"].encode()) <= 64]
     return [buttons[i:i + BUTTONS_PER_ROW] for i in range(0, len(buttons), BUTTONS_PER_ROW)]
@@ -308,8 +406,24 @@ class Bot:
 
     # -- poll ------------------------------------------------------------ #
 
+    def sync_commands(self) -> None:
+        """Меню команд в Telegram (setMyCommands) — только если список изменился."""
+        digest = hashlib.sha256(json.dumps(TELEGRAM_COMMANDS, ensure_ascii=False)
+                                .encode()).hexdigest()[:16]
+        if self.store.state.get("commands_hash") == digest:
+            return
+        try:
+            self.api.call("setMyCommands", commands=TELEGRAM_COMMANDS)
+        except TelegramError as e:
+            log(f"Не удалось обновить меню команд: {e}")   # попробуем в следующий раз
+            return
+        self.store.state["commands_hash"] = digest
+        self.store.save()
+        log("Меню команд в Telegram обновлено")
+
     def poll(self) -> int:
         handled = 0
+        self.sync_commands()
         if self.store.state.get("awaiting_who"):
             self.cleanup_awaiting()      # chat_id не держим в state.json дольше суток
             self.store.save()
@@ -372,7 +486,17 @@ class Bot:
                 self.api.send_message(chat_id, "Тебя нет среди подписчиков, удалять нечего.")
         elif command in ("/today", "/tomorrow", "/week"):
             self.send_personal(chat_id, command)
-        else:
+        elif command == "/date":
+            self.handle_date(chat_id, args)
+        elif command == "/next":
+            self.send_next(chat_id)
+        elif command == "/find":
+            self.send_find(chat_id, " ".join(args))
+        elif command == "/free":
+            self.handle_free(chat_id, args)
+        elif command in ("/mute", "/unmute"):
+            self.set_muted(chat_id, command == "/mute")
+        else:                                            # /help и неизвестные команды
             self.api.send_message(chat_id, HELP_TEXT)
 
     def handle_callback(self, cq: dict) -> None:
@@ -585,7 +709,102 @@ class Bot:
                   for d in days]
         self.api.send_message(chat_id, "\n\n".join(blocks))
 
+    def send_find(self, chat_id, query: str) -> None:
+        query = query.strip()
+        if not query:
+            self.api.send_message(chat_id, "Напиши часть названия: /find эрнест")
+            return
+        # каждое слово запроса — часть названия, порядок не важен:
+        # «триумф муз» находит «Триумф любви муз (Овчинникова)»
+        words = normalize(query).split()
+        now = self.request_now()
+        found = [r for r in self.schedule
+                 if all(w in normalize(r.title) for w in words) and not ended(r, now)]
+        found.sort(key=lambda r: (r.date, *_by_time(r)))
+        if not found:
+            self.api.send_message(chat_id, f"Ничего не нашёл по «{query}» на ближайшие дни.")
+            return
+        shown = found[:FIND_LIMIT]
+        blocks = [format_block(f"{d:%d.%m.%y}:", [r for r in shown if r.date == d])
+                  for d in sorted({r.date for r in shown})]
+        more = (f"\n\nи ещё {len(found) - len(shown)} — уточни название"
+                if len(found) > len(shown) else "")
+        self.api.send_message(chat_id, f"НАЙДЕНО «{query}»:\n\n" + "\n\n".join(blocks) + more)
+
+    def handle_free(self, chat_id, args: list[str]) -> None:
+        today = self.request_now().date()
+        day = next((d for d in (parse_ddmm(a, today) for a in args) if d), None)
+        rest = [a for a in args if parse_ddmm(a, today) is None]
+        if len(rest) > 1:
+            self.api.send_message(chat_id, "Напиши так: /free, /free 301 или /free 301 18.11")
+            return
+        rooms = self.rooms()
+        if rest and rest[0] not in rooms:
+            self.api.send_message(chat_id, f"Аудитории «{rest[0]}» нет в расписании. "
+                                  f"Есть: {', '.join(rooms) or '—'}.")
+            return
+        days = [day] if day else [today, today + timedelta(days=1)]
+        blocks = [format_free(room, d, self.schedule)
+                  for room in (rest or rooms) for d in days]
+        self.api.send_message(chat_id, "\n\n".join(blocks) or "В расписании пока нет аудиторий.")
+
     # -- личные команды ------------------------------------------------- #
+
+    def _need_name(self, chat_id) -> str | None:
+        name = self.store.subscribers.get(str(chat_id))
+        if not name:
+            self.api.send_message(chat_id, "Сначала напиши мне своё имя (подробнее — /start).")
+        return name
+
+    def handle_date(self, chat_id, args: list[str]) -> None:
+        name = self._need_name(chat_id)
+        if not name:
+            return
+        day = parse_ddmm(args[0], self.request_now().date()) if len(args) == 1 else None
+        if day is None:
+            self.api.send_message(chat_id, "Напиши дату так: /date 18.11")
+            return
+        items = rehearsals_for(name, day, self.schedule, self.book)
+        self.api.send_message(chat_id, format_day(day, items) if items
+                              else f"{name}, на {day:%d.%m.%y} репетиций нет.")
+
+    def send_next(self, chat_id) -> None:
+        name = self._need_name(chat_id)
+        if not name:
+            return
+        now = self.request_now()
+        mine = [r for r in self.schedule
+                if r.date is not None and self.book.matches(name, r) and not ended(r, now)]
+        if not mine:
+            self.api.send_message(chat_id, f"{name}, ближайших репетиций нет.")
+            return
+        first = min(mine, key=lambda r: (r.date, *_by_time(r)))
+        # параллельные — все, что начинаются тогда же
+        same = [r for r in mine if r.date == first.date and r.start == first.start]
+        if any(is_running(r, now) for r in same):
+            title = "СЕЙЧАС ИДЁТ:"
+        elif first.date == now.date():
+            title = "БЛИЖАЙШАЯ РЕПЕТИЦИЯ СЕГОДНЯ:"
+        else:
+            title = f"БЛИЖАЙШАЯ РЕПЕТИЦИЯ {first.date:%d.%m.%y}:"
+        self.api.send_message(chat_id, format_block(title, same))
+
+    def set_muted(self, chat_id, muted: bool) -> None:
+        if not self._need_name(chat_id):
+            return
+        chat = str(chat_id)
+        if muted == self.store.is_muted(chat):
+            self.api.send_message(chat_id, "Рассылка и уведомления уже выключены. Включить — /unmute."
+                                  if muted else "Рассылка и уведомления уже включены.")
+            return
+        (self.store.muted.add if muted else self.store.muted.discard)(chat)
+        self.store.save()
+        self.api.send_message(
+            chat_id,
+            "Вечерняя рассылка и уведомления об изменениях выключены. Команды /today, "
+            "/next и другие работают как обычно. Включить снова — /unmute."
+            if muted else "Вечерняя рассылка и уведомления об изменениях снова включены.")
+
 
     def send_personal(self, chat_id, command: str) -> None:
         name = self.store.subscribers.get(str(chat_id))
@@ -625,6 +844,8 @@ class Bot:
             return 0
         sent = failed = 0
         for chat_id, name in list(self.store.subscribers.items()):
+            if self.store.is_muted(chat_id):
+                continue                                 # /mute
             items = rehearsals_for(name, day, self.schedule, self.book)
             if not items:
                 continue
@@ -679,6 +900,8 @@ class Bot:
         sent = 0
         if changes:
             for chat_id, name in list(self.store.subscribers.items()):
+                if self.store.is_muted(chat_id):
+                    continue                             # /mute
                 mine = [c for c in changes if ch.affected(c, name, self.book)]
                 if mine and self._deliver(chat_id, format_changes(mine)):
                     sent += 1
