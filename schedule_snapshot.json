@@ -452,29 +452,6 @@
     },
     {
       "date": "2026-11-18",
-      "end": "16:20",
-      "participants": [
-        {
-          "name": "Миша П",
-          "note": null
-        },
-        {
-          "name": "Мира",
-          "note": null
-        },
-        {
-          "name": "Вася О",
-          "note": null
-        }
-      ],
-      "room": "309",
-      "start": "15:30",
-      "time_raw": "15:30-16:20",
-      "title": "Эрнест",
-      "weekday": "среда"
-    },
-    {
-      "date": "2026-11-18",
       "end": "16:40",
       "participants": [
         {
@@ -509,22 +486,22 @@
       "end": "16:40",
       "participants": [
         {
-          "name": "Даниил",
+          "name": "Миша П",
           "note": null
         },
         {
-          "name": "Василиса К",
+          "name": "Вася О",
           "note": null
         },
         {
-          "name": "Лина",
+          "name": "Мира",
           "note": null
         }
       ],
       "room": "301",
       "start": "16:00",
       "time_raw": "16:00-16:40",
-      "title": "Оклахома",
+      "title": "Эрнест",
       "weekday": "среда"
     },
     {
