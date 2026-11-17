@@ -10,6 +10,8 @@
   python bot.py check_names          — показать имена, которые нужно проверить
   python bot.py preview ИМЯ [дд.мм.гг] — показать, что придёт человеку (по умолчанию — завтра)
   python bot.py image ИМЯ [дд.мм.гг]   — нарисовать картинку дня в out/preview.png
+  python bot.py setup_profile [--apply] — имя, описания и меню команд бота
+                                       (без --apply — только показать)
   python bot.py broadcast [--send] [--force] — объявление из broadcast_message.txt всем
                                        (без --send — только проверка)
 
@@ -73,6 +75,7 @@ FIND_LIMIT = 10  # сколько ближайших репетиций пока
 # Единый список команд: из него строятся /help и меню команд Telegram (setMyCommands).
 # (команда, аргументы для /help, описание)
 COMMANDS = [
+    ("start", "", "что умеет бот и как сменить имя"),
     ("today", "", "мои репетиции сегодня"),
     ("tomorrow", "", "мои репетиции завтра"),
     ("week", "", "мои репетиции на 7 дней"),
@@ -86,9 +89,8 @@ COMMANDS = [
     ("find", "название", "ближайшие репетиции отрывка"),
     ("mute", "", "выключить вечернюю рассылку и уведомления"),
     ("unmute", "", "включить вечернюю рассылку и уведомления"),
-    ("help", "", "список команд"),
-    ("start", "", "что умеет бот и как сменить имя"),
     ("stop", "", "отписаться и удалить мои данные"),
+    ("help", "", "список команд"),
 ]
 HELP_TEXT = "Команды:\n" + "\n".join(
     f"/{cmd}{' ' + args if args else ''} — {desc}" for cmd, args, desc in COMMANDS)
@@ -1073,6 +1075,64 @@ def preview(name: str, day_str: str | None) -> int:
     return 0
 
 
+# Профиль бота в Telegram (python bot.py setup_profile, workflow setup_profile.yml).
+# Лимиты Bot API: имя до 64, короткое описание до 120, описание до 512 символов.
+PROFILE_NAME = "Расписание репетиций"
+PROFILE_SHORT_DESCRIPTION = ("Присылает ваше расписание репетиций каждый вечер и сообщает, "
+                             "если в таблице что-то поменялось.")
+PROFILE_DESCRIPTION = """Расписание репетиций вашего курса.
+
+Что умею:
+• каждый вечер в 21:00 присылаю ваше расписание на завтра: картинка-сетка и текст
+• сразу сообщаю, если в таблице что-то поменялось
+• отвечаю на команды: что идёт сейчас, расписание друга, репетиции в аудитории
+
+Нажмите «Начать» и выберите своё имя."""
+PROFILE_LIMITS = {"name": 64, "short_description": 120, "description": 512}
+
+
+def profile_calls() -> list[tuple[str, dict]]:
+    """Вызовы Bot API, которые ставят профиль. Команды — из того же COMMANDS, что /help."""
+    return [
+        ("setMyName", {"name": PROFILE_NAME}),
+        ("setMyShortDescription", {"short_description": PROFILE_SHORT_DESCRIPTION}),
+        ("setMyDescription", {"description": PROFILE_DESCRIPTION}),
+        ("setMyCommands", {"commands": TELEGRAM_COMMANDS}),
+    ]
+
+
+def setup_profile(apply: bool, api=None) -> int:
+    """Без apply — только печатает, что будет установлено. С apply — вызывает Bot API.
+    Токен — только из TELEGRAM_BOT_TOKEN; ошибки Telegram печатаются без него."""
+    fields = {"name": PROFILE_NAME, "short_description": PROFILE_SHORT_DESCRIPTION,
+              "description": PROFILE_DESCRIPTION}
+    too_long = False
+    for field, value in fields.items():
+        n, limit = tg_len(value), PROFILE_LIMITS[field]
+        too_long |= n > limit
+        print(f"----- {field}: {n} из {limit}{' — ДЛИННЕЕ ЛИМИТА' if n > limit else ''}")
+        print(value)
+    print(f"----- commands: {len(TELEGRAM_COMMANDS)}")
+    for c in TELEGRAM_COMMANDS:
+        print(f"/{c['command']} — {c['description']}")
+    if too_long:
+        print("Ошибка: текст длиннее лимита Telegram — ничего не устанавливаю")
+        return 2
+    if not apply:
+        print("Режим проверки: ничего не установлено (для установки — apply=true)")
+        return 0
+    api = api or TelegramAPI(os.environ.get("TELEGRAM_BOT_TOKEN", ""))
+    failed = 0
+    for method, params in profile_calls():
+        try:
+            api.call(method, **params)
+            print(f"{method}: готово")
+        except TelegramError as e:      # например, лимит частоты для setMyName
+            failed += 1
+            print(f"{method}: не удалось — {e}")
+    return 1 if failed else 0
+
+
 BROADCAST_FILE = ROOT / "broadcast_message.txt"
 BROADCAST_CAPTION_MAX = 1024       # лимит Telegram для подписи к фото
 BROADCAST_PAUSE = 0.1              # секунд между отправками
@@ -1173,7 +1233,8 @@ def main(argv: list[str]) -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("mode", nargs="?", default="run",
                         choices=["poll", "send_daily", "run", "check_names", "preview", "image",
-                                 "broadcast"])
+                                 "broadcast", "setup_profile"])
+    parser.add_argument("--apply", action="store_true", help="setup_profile: вызвать Bot API")
     parser.add_argument("--send", action="store_true", help="broadcast: отправить (иначе проверка)")
     parser.add_argument("args", nargs="*", help="для preview и image: ИМЯ [дд.мм.гг]")
     parser.add_argument("--force", action="store_true",
@@ -1185,6 +1246,8 @@ def main(argv: list[str]) -> int:
 
     if opts.mode == "check_names":
         return check_names()
+    if opts.mode == "setup_profile":
+        return setup_profile(apply=opts.apply)
     if opts.mode == "broadcast":
         return broadcast(send=opts.send, force=opts.force)
     if opts.mode == "image":

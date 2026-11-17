@@ -174,6 +174,22 @@ python bot.py image "Миша К"           # на завтра
 
 В `--dry-run` картинки тоже пишутся в `out/` (`out/dry-run-<chat_id>-schedule-<дата>.png`).
 
+## Профиль бота в Telegram
+
+* **Тексты и меню команд:** Actions → **Bot setup profile** → Run workflow.
+  С выключенным `apply` (по умолчанию) — только показывает в логе, что будет
+  установлено, и длины; с включённым — вызывает `setMyName` («Расписание
+  репетиций», до 64 символов), `setMyShortDescription` (до 120),
+  `setMyDescription` (до 512, видно в пустом чате) и `setMyCommands`. Тексты —
+  константы `PROFILE_*` в `bot.py`; меню команд берётся из того же списка
+  `COMMANDS`, что и `/help`. Локально: `python bot.py setup_profile` (без
+  `--apply` ничего не меняется). Telegram ограничивает частоту смены имени —
+  если `setMyName` вернёт «Too Many Requests», остальное всё равно установится.
+* **Фото профиля** Bot API не ставит: `assets/bot_logo.png` (1024×1024, рисует
+  `render_logo.py`) загружается вручную через @BotFather → `/setuserpic`.
+  Все блоки логотипа — внутри круга радиусом 380 от центра (Telegram обрезает
+  аватарку по кругу).
+
 ## Объявление об обновлении (ручная рассылка)
 
 Разовое сообщение всем подписчикам — **и тем, у кого включён `/mute`**: баннер
@@ -403,6 +419,8 @@ chat_id и имя попадают в публичный репозиторий,
 | `fonts/` | шрифты Manrope, Playfair Display и Press Start 2P (OFL, лицензии `fonts/OFL-*.txt`) |
 | `render_banner.py` | баннер объявления 1080×1080, оформление — константы в начале |
 | `assets/update_banner.png` | готовый баннер для объявления |
+| `render_logo.py`, `assets/bot_logo.png` | логотип бота для фото профиля |
+| `.github/workflows/setup_profile.yml` | имя, описания и меню команд бота |
 | `broadcast_message.txt` | текст объявления |
 | `.github/workflows/broadcast.yml` | ручная рассылка объявления |
 | `requirements.txt` | `requests` и `Pillow`; в workflow ставятся с кэшем pip |
