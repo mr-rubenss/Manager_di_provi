@@ -367,6 +367,29 @@
     },
     {
       "date": "2026-11-18",
+      "end": "12:50",
+      "participants": [
+        {
+          "name": "Соня",
+          "note": null
+        },
+        {
+          "name": "Тима",
+          "note": null
+        },
+        {
+          "name": "Сеня",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "12:40",
+      "time_raw": "12:40-12:50",
+      "title": "Изюминка муз",
+      "weekday": "среда"
+    },
+    {
+      "date": "2026-11-18",
       "end": "15:10",
       "participants": [
         {
