@@ -244,6 +244,41 @@
     },
     {
       "date": "2026-11-17",
+      "end": "20:40",
+      "participants": [
+        {
+          "name": "Света",
+          "note": null
+        },
+        {
+          "name": "Дея",
+          "note": null
+        },
+        {
+          "name": "Лина",
+          "note": null
+        },
+        {
+          "name": "Гриша",
+          "note": null
+        },
+        {
+          "name": "Сеня",
+          "note": null
+        },
+        {
+          "name": "Тихон",
+          "note": null
+        }
+      ],
+      "room": "309",
+      "start": "20:00",
+      "time_raw": "20:00 - 20:40",
+      "title": "Хэллоу Долли драм (Тропина)",
+      "weekday": "вторник"
+    },
+    {
+      "date": "2026-11-17",
       "end": "22:00",
       "participants": [
         {
