@@ -344,6 +344,29 @@
     },
     {
       "date": "2026-11-18",
+      "end": "12:30",
+      "participants": [
+        {
+          "name": "Вася К",
+          "note": null
+        },
+        {
+          "name": "Лина",
+          "note": null
+        },
+        {
+          "name": "Даня",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "11:30",
+      "time_raw": "11:30-12:30",
+      "title": "Оклахома",
+      "weekday": "среда"
+    },
+    {
+      "date": "2026-11-18",
       "end": "15:10",
       "participants": [
         {
