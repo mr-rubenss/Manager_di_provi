@@ -243,41 +243,6 @@
       "weekday": "четверг"
     },
     {
-      "date": "2026-11-19",
-      "end": "19:15",
-      "participants": [
-        {
-          "name": "Света",
-          "note": null
-        },
-        {
-          "name": "Тихон",
-          "note": null
-        },
-        {
-          "name": "Дея",
-          "note": null
-        },
-        {
-          "name": "Лина",
-          "note": null
-        },
-        {
-          "name": "Гриша",
-          "note": null
-        },
-        {
-          "name": "Арсений",
-          "note": null
-        }
-      ],
-      "room": "309",
-      "start": "18:15",
-      "time_raw": "18.15-19:15",
-      "title": "Хэллоу Долли (Тропина)",
-      "weekday": "четверг"
-    },
-    {
       "date": "2026-11-20",
       "end": "12:30",
       "participants": [
@@ -302,6 +267,41 @@
       "start": "11:15",
       "time_raw": "11:15-12:30",
       "title": "речь (мира)",
+      "weekday": "пятница"
+    },
+    {
+      "date": "2026-11-20",
+      "end": "13:00",
+      "participants": [
+        {
+          "name": "Света",
+          "note": null
+        },
+        {
+          "name": "Дея",
+          "note": null
+        },
+        {
+          "name": "Лина",
+          "note": null
+        },
+        {
+          "name": "Тихон",
+          "note": null
+        },
+        {
+          "name": "Гриша",
+          "note": null
+        },
+        {
+          "name": "Арсений",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "12:30",
+      "time_raw": "12:30-13.00",
+      "title": "Хэллоу Долли (Тропина)",
       "weekday": "пятница"
     },
     {
