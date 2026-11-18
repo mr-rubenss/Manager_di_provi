@@ -256,6 +256,37 @@
     },
     {
       "date": "2026-11-19",
+      "end": "15:10",
+      "participants": [
+        {
+          "name": "Ди",
+          "note": null
+        },
+        {
+          "name": "Мира",
+          "note": null
+        },
+        {
+          "name": "Тихон",
+          "note": null
+        },
+        {
+          "name": "Гриша",
+          "note": null
+        },
+        {
+          "name": "Арсений",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "14:30",
+      "time_raw": "14:30 - 15:10",
+      "title": "Эрнест (драм)",
+      "weekday": "четверг"
+    },
+    {
+      "date": "2026-11-19",
       "end": "17:15",
       "participants": [
         {
@@ -275,6 +306,37 @@
       "start": "16:45",
       "time_raw": "16:45-17:15",
       "title": "Чикаго (муз)",
+      "weekday": "четверг"
+    },
+    {
+      "date": "2026-11-19",
+      "end": "18:00",
+      "participants": [
+        {
+          "name": "Ди",
+          "note": null
+        },
+        {
+          "name": "Мира",
+          "note": null
+        },
+        {
+          "name": "Тихон",
+          "note": null
+        },
+        {
+          "name": "Гриша",
+          "note": null
+        },
+        {
+          "name": "Соня",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "17:15",
+      "time_raw": "17:15 - 18:00",
+      "title": "Эрнест (муз)",
       "weekday": "четверг"
     },
     {
@@ -479,6 +541,29 @@
       "start": "15:30",
       "time_raw": "15:30-16:00",
       "title": "Чикаго (муз)",
+      "weekday": "суббота"
+    },
+    {
+      "date": "2026-11-21",
+      "end": "17:10",
+      "participants": [
+        {
+          "name": "Тома",
+          "note": null
+        },
+        {
+          "name": "Ева",
+          "note": null
+        },
+        {
+          "name": "Миша К",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "16:30",
+      "time_raw": "16:30 - 17:10",
+      "title": "Лилиом",
       "weekday": "суббота"
     }
   ],
