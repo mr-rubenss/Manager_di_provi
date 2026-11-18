@@ -44,29 +44,6 @@
     },
     {
       "date": "2026-11-18",
-      "end": "12:30",
-      "participants": [
-        {
-          "name": "Вася К",
-          "note": null
-        },
-        {
-          "name": "Лина",
-          "note": null
-        },
-        {
-          "name": "Даня",
-          "note": null
-        }
-      ],
-      "room": "301",
-      "start": "11:30",
-      "time_raw": "11:30-12:30",
-      "title": "Оклахома",
-      "weekday": "среда"
-    },
-    {
-      "date": "2026-11-18",
       "end": "12:50",
       "participants": [
         {
@@ -148,25 +125,25 @@
     },
     {
       "date": "2026-11-18",
-      "end": "16:00",
+      "end": "15:40",
       "participants": [
         {
-          "name": "Софа",
+          "name": "Мира",
           "note": null
         },
         {
-          "name": "Миша.К",
+          "name": "Вася О",
           "note": null
         },
         {
-          "name": "Даня",
+          "name": "Миша П",
           "note": null
         }
       ],
       "room": "301",
       "start": "15:00",
-      "time_raw": "15;00-16;00",
-      "title": "Хелоу Долли",
+      "time_raw": "15;00-15:40",
+      "title": "Эрнест",
       "weekday": "среда"
     },
     {
@@ -224,22 +201,22 @@
       "end": "16:40",
       "participants": [
         {
-          "name": "Миша П",
+          "name": "Вася К",
           "note": null
         },
         {
-          "name": "Вася О",
+          "name": "Лина",
           "note": null
         },
         {
-          "name": "Мира",
+          "name": "Даня",
           "note": null
         }
       ],
       "room": "301",
       "start": "16:00",
       "time_raw": "16:00-16:40",
-      "title": "Эрнест",
+      "title": "Оклахома",
       "weekday": "среда"
     },
     {
