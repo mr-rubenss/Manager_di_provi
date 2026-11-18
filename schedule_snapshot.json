@@ -148,33 +148,6 @@
     },
     {
       "date": "2026-11-18",
-      "end": "15:30",
-      "participants": [
-        {
-          "name": "Ди",
-          "note": null
-        },
-        {
-          "name": "Мира",
-          "note": null
-        },
-        {
-          "name": "Гриша",
-          "note": null
-        },
-        {
-          "name": "Арсений",
-          "note": null
-        }
-      ],
-      "room": "309",
-      "start": "14:30",
-      "time_raw": "14:30 - 15:30",
-      "title": "Эрнест драм (муз)",
-      "weekday": "среда"
-    },
-    {
-      "date": "2026-11-18",
       "end": "16:00",
       "participants": [
         {
