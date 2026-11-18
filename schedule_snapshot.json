@@ -221,6 +221,41 @@
     },
     {
       "date": "2026-11-19",
+      "end": "13:00",
+      "participants": [
+        {
+          "name": "Света",
+          "note": null
+        },
+        {
+          "name": "Дея",
+          "note": null
+        },
+        {
+          "name": "Лина",
+          "note": null
+        },
+        {
+          "name": "Тихон",
+          "note": null
+        },
+        {
+          "name": "Гриша",
+          "note": null
+        },
+        {
+          "name": "Сеня",
+          "note": null
+        }
+      ],
+      "room": "309",
+      "start": "12:00",
+      "time_raw": "12:00-13:00",
+      "title": "Хэллоу Долли (Тропина)",
+      "weekday": "четверг"
+    },
+    {
+      "date": "2026-11-19",
       "end": "17:15",
       "participants": [
         {
