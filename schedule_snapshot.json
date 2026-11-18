@@ -329,14 +329,14 @@
           "note": null
         },
         {
-          "name": "Соня",
+          "name": "Арсений",
           "note": null
         }
       ],
       "room": "301",
       "start": "17:15",
       "time_raw": "17:15 - 18:00",
-      "title": "Эрнест (муз)",
+      "title": "Эрнест (драм)",
       "weekday": "четверг"
     },
     {
@@ -422,6 +422,37 @@
       "start": "13:00",
       "time_raw": "13:00-14:00",
       "title": "Оклахома",
+      "weekday": "пятница"
+    },
+    {
+      "date": "2026-11-20",
+      "end": "15:30",
+      "participants": [
+        {
+          "name": "Ди",
+          "note": null
+        },
+        {
+          "name": "Мира",
+          "note": null
+        },
+        {
+          "name": "Тихон",
+          "note": null
+        },
+        {
+          "name": "Гриша",
+          "note": null
+        },
+        {
+          "name": "Соня",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "14:45",
+      "time_raw": "14:45-15:30",
+      "title": "Эрнест (муз)",
       "weekday": "пятница"
     },
     {
