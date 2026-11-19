@@ -613,6 +613,29 @@
     },
     {
       "date": "2026-11-21",
+      "end": "17:00",
+      "participants": [
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Ева",
+          "note": null
+        },
+        {
+          "name": "Федя",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "16:30",
+      "time_raw": "16:30 - 17:00",
+      "title": "Карусель (драм)",
+      "weekday": "суббота"
+    },
+    {
+      "date": "2026-11-21",
       "end": "17:30",
       "participants": [
         {
