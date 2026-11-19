@@ -656,6 +656,65 @@
       "time_raw": "17:00 - 17:30",
       "title": "Лилиом (драм)",
       "weekday": "суббота"
+    },
+    {
+      "date": "2026-11-22",
+      "end": "20:00",
+      "participants": [
+        {
+          "name": "Тамара",
+          "note": null
+        },
+        {
+          "name": "Света",
+          "note": null
+        },
+        {
+          "name": "Ева",
+          "note": null
+        },
+        {
+          "name": "Соня",
+          "note": null
+        },
+        {
+          "name": "Вася К",
+          "note": null
+        },
+        {
+          "name": "Вася О",
+          "note": null
+        },
+        {
+          "name": "Маша",
+          "note": null
+        },
+        {
+          "name": "Дианна",
+          "note": null
+        },
+        {
+          "name": "Софа",
+          "note": null
+        },
+        {
+          "name": "Мирослава",
+          "note": null
+        },
+        {
+          "name": "Дея",
+          "note": null
+        },
+        {
+          "name": "Лина",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "18:00",
+      "time_raw": "18:00-20:00",
+      "title": "Дом Бернарды Альбы (муз)",
+      "weekday": "воскресенье"
     }
   ],
   "source": "1kVfvZjTg28-gBQXUATRMetdhLhUGdL0dg4oxJSJ2fdw/Лист1"
