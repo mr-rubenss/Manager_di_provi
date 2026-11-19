@@ -633,6 +633,64 @@
       "time_raw": "16:00-16:30",
       "title": "Триумф любви муз (Овчинникова)",
       "weekday": "суббота"
+    },
+    {
+      "date": "2026-11-21",
+      "end": "17:00",
+      "participants": [
+        {
+          "name": "Тихон",
+          "note": null
+        },
+        {
+          "name": "Дея",
+          "note": null
+        },
+        {
+          "name": "Света",
+          "note": null
+        },
+        {
+          "name": "Лина",
+          "note": null
+        },
+        {
+          "name": "Гриша",
+          "note": null
+        },
+        {
+          "name": "Арсений",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "16:30",
+      "time_raw": "16:30 - 17:00",
+      "title": "Хеллоу Долли (Тропина Светлана)",
+      "weekday": "суббота"
+    },
+    {
+      "date": "2026-11-21",
+      "end": "17:30",
+      "participants": [
+        {
+          "name": "Тома",
+          "note": null
+        },
+        {
+          "name": "Ева",
+          "note": null
+        },
+        {
+          "name": "Миша К",
+          "note": null
+        }
+      ],
+      "room": "309",
+      "start": "17:00",
+      "time_raw": "17:00 - 17:30",
+      "title": "Лилиом (драм)",
+      "weekday": "суббота"
     }
   ],
   "source": "1kVfvZjTg28-gBQXUATRMetdhLhUGdL0dg4oxJSJ2fdw/Лист1"
