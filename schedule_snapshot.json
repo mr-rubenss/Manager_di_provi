@@ -351,41 +351,6 @@
       "end": "13:00",
       "participants": [
         {
-          "name": "Маша",
-          "note": null
-        },
-        {
-          "name": "Соня",
-          "note": null
-        },
-        {
-          "name": "Вася К",
-          "note": null
-        },
-        {
-          "name": "Вася О",
-          "note": null
-        },
-        {
-          "name": "Света",
-          "note": null
-        },
-        {
-          "name": "Тома",
-          "note": null
-        }
-      ],
-      "room": "309",
-      "start": "12:00",
-      "time_raw": "12:00-13:00",
-      "title": "Дом Бернарды Альбы (драм)",
-      "weekday": "суббота"
-    },
-    {
-      "date": "2026-11-21",
-      "end": "13:00",
-      "participants": [
-        {
           "name": "Федя",
           "note": null
         },
@@ -602,6 +567,25 @@
       "start": "16:30",
       "time_raw": "16:30 - 17:00",
       "title": "Карусель (драм)",
+      "weekday": "суббота"
+    },
+    {
+      "date": "2026-11-21",
+      "end": "17:30",
+      "participants": [
+        {
+          "name": "Соня",
+          "note": null
+        },
+        {
+          "name": "Гриша",
+          "note": null
+        }
+      ],
+      "room": "301",
+      "start": "17:00",
+      "time_raw": "17:00-17:30",
+      "title": "Казанова (муз)",
       "weekday": "суббота"
     },
     {
