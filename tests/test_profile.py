@@ -67,7 +67,7 @@ class ProfileTextsTest(unittest.TestCase):
         self.assertTrue(PROFILE_DESCRIPTION.startswith("Расписание репетиций вашего курса.\n\n"))
 
     def test_commands_single_source(self):
-        expected = ["start", "today", "tomorrow", "week", "date", "next", "now", "at", "who",
+        expected = ["menu", "settings", "start", "today", "tomorrow", "week", "date", "next", "now", "at", "who",
                     "room", "free", "find", "mute", "unmute", "stop", "help"]
         self.assertEqual([c["command"] for c in TELEGRAM_COMMANDS], expected)
         self.assertEqual([c for c, _, _ in COMMANDS], expected)

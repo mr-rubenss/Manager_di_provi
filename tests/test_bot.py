@@ -133,7 +133,7 @@ class FlowTest(unittest.TestCase):
         bot.poll()
         self.assertEqual(len(api.sent), 1)
         chat, text, keyboard = api.sent[0]
-        self.assertIsNone(keyboard)                                 # без кнопок
+        self.assertIn("m:today", [b["callback_data"] for row in keyboard for b in row])
         for part in ("Что я умею", "/today", "/tomorrow", "/week", "/stop", "/start",
                      "напиши своё имя", "первую букву фамилии", "Миша К или Миша П"):
             self.assertIn(part, text)
@@ -210,7 +210,7 @@ class FlowTest(unittest.TestCase):
     def test_unknown_command_shows_help(self):
         bot, api, store, _ = make_bot([msg(1, "/help")])
         bot.poll()
-        self.assertTrue(api.sent[-1][1].startswith("Команды:"))
+        self.assertTrue(api.sent[-1][1].startswith("Открой /menu"))
         self.assertEqual(store.subscribers, {})
 
     def test_old_buttons_still_work(self):

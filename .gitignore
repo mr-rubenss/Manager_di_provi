@@ -3,3 +3,9 @@ __pycache__/
 .venv/
 .env
 out/
+
+# Local Windows configuration and operations
+config.json
+config-*.tmp
+logs/
+backups/

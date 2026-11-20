@@ -269,7 +269,7 @@ class WhoTest(unittest.TestCase):
         env = Env()
         env.send("/who")
         _, text, kb = env.send("Миша")
-        self.assertEqual(buttons(kb), ["Миша К", "Миша П"])
+        self.assertEqual(buttons(kb), ["Миша К", "Миша П", "Назад в меню"])
         self.assertEqual(env.store.subscribers, {})
 
 

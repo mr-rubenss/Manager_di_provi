@@ -1,4 +1,4 @@
-"""Telegram-бот расписания репетиций. Работает «по вызову» (GitHub Actions).
+"""Telegram-бот расписания репетиций. На Windows запускается через Планировщик заданий.
 
 Режимы:
   python bot.py poll                 — обработать новые сообщения (getUpdates),
@@ -34,6 +34,8 @@ import json
 import os
 import re
 import shutil
+from collections import Counter
+from secrets import token_urlsafe
 import sys
 import tempfile
 from datetime import date, datetime, time, timedelta, timezone
@@ -57,7 +59,38 @@ DAILY_HOUR = int(os.environ.get("DAILY_HOUR", "21"))  # рассылка — с 
 
 CAPTION_LIMIT = 1000   # Telegram: подпись к фото до 1024 символов; берём с запасом
 BUTTONS_PER_ROW = 3
-AWAIT_WHO_TTL = timedelta(hours=24)  # сколько ждать имя после /who без имени
+INPUT_TTL = timedelta(hours=24)
+AWAIT_WHO_TTL = INPUT_TTL  # прежнее имя для совместимости
+NOTICES = {"daily": "Расписание на завтра", "changes": "Изменения расписания",
+           "announcements": "Общие объявления"}
+MENU = (
+    (("Сегодня", "today"), ("Завтра", "tomorrow")),
+    (("На неделю", "week"), ("Ближайшая репетиция", "next")),
+    (("Сейчас идут", "now"), ("Расписание человека", "who")),
+    (("Аудитории", "room"), ("Свободные аудитории", "free")),
+    (("Найти постановку", "find"), ("Настройки", "settings")),
+    (("Помощь", "help"),),
+)
+MENU_COMMANDS = {action for row in MENU for _, action in row}
+BACK = ("Назад в меню", "m:menu")
+ADMIN_MENU = (
+    (("Состояние бота", "a:status"), ("Статистика", "a:stats")),
+    (("Проверить таблицу", "a:table"), ("Проверить изменения", "a:changes")),
+    (("Сделать объявление", "a:announcement"),),
+    (("Главное меню", "m:menu"),),
+)
+BACK_ADMIN = ("Назад к управлению", "a:menu")
+
+
+def buttons(*rows):
+    return [[{"text": label, "callback_data": action} for label, action in row]
+            for row in rows]
+
+
+def admin_ids():
+    return {part.strip() for part in os.getenv("ADMIN_TELEGRAM_IDS", "").split(",")
+            if re.fullmatch(r"[1-9][0-9]*", part.strip())}
+
 NOTHING_AT_TIME = "В это время репетиций нет"
 
 # Рабочий день аудиторий для /free (по МСК); можно переопределить переменными окружения
@@ -75,6 +108,8 @@ FIND_LIMIT = 10  # сколько ближайших репетиций пока
 # Единый список команд: из него строятся /help и меню команд Telegram (setMyCommands).
 # (команда, аргументы для /help, описание)
 COMMANDS = [
+    ("menu", "", "открыть главное меню"),
+    ("settings", "", "настройки уведомлений"),
     ("start", "", "что умеет бот и как сменить имя"),
     ("today", "", "мои репетиции сегодня"),
     ("tomorrow", "", "мои репетиции завтра"),
@@ -92,7 +127,7 @@ COMMANDS = [
     ("stop", "", "отписаться и удалить мои данные"),
     ("help", "", "список команд"),
 ]
-HELP_TEXT = "Команды:\n" + "\n".join(
+HELP_TEXT = "Открой /menu, чтобы пользоваться кнопками.\n\nКоманды для ручного ввода:\n" + "\n".join(
     f"/{cmd}{' ' + args if args else ''} — {desc}" for cmd, args, desc in COMMANDS)
 TELEGRAM_COMMANDS = [{"command": cmd, "description": desc} for cmd, _, desc in COMMANDS]
 
@@ -104,7 +139,7 @@ ABOUT_TEXT = (
     "• сообщаю, если в расписании что-то поменялось;\n"
     "• показываю твои репетиции по командам;\n"
     "• подскажу, что идёт сейчас, где чья репетиция и что в аудитории.\n\n"
-    "Отвечаю не мгновенно: обычно в течение 5–60 минут."
+    "Открой /menu и выбери нужное действие. Уведомления можно настроить в /settings."
 )
 
 
@@ -131,6 +166,8 @@ class TelegramAPI:
         self._base = f"https://api.telegram.org/bot{token}/"
         self._session = session or requests.Session()
         self._timeout = timeout
+        self.last_success = None
+        self.last_error = None
 
     def _redact(self, text: str) -> str:
         return text.replace(self._token, "<TOKEN>")
@@ -142,11 +179,13 @@ class TelegramAPI:
         return self._post(method, json=params)
 
     def send_photo(self, chat_id, png: bytes, filename: str = "schedule.png",
-                   caption: str | None = None):
+                   caption: str | None = None, keyboard: list | None = None):
         """Картинка (multipart/form-data), подпись — обычный текст без parse_mode."""
         data = {"chat_id": chat_id}
         if caption:
             data["caption"] = caption
+        if keyboard is not None:
+            data["reply_markup"] = json.dumps({"inline_keyboard": keyboard}, ensure_ascii=False)
         return self._post("sendPhoto", data=data,
                           files={"photo": (filename, png, "image/png")})
 
@@ -160,10 +199,13 @@ class TelegramAPI:
             # бросаем новую ошибку вне except, чтобы исходная не попала в traceback
             error = self._redact(f"{method}: {type(e).__name__}: {e}")
         if error is not None:
+            self.last_error = (local_now().timestamp(), f"Telegram: {method} (ошибка соединения)")
             raise TelegramError(error)
         if not data.get("ok"):
+            self.last_error = (local_now().timestamp(), f"Telegram: {method} (код {data.get('error_code')})")
             raise TelegramError(self._redact(f"{method}: {data.get('description')}"),
                                 data.get("error_code"))
+        self.last_success = local_now()
         return data["result"]
 
     def send_message(self, chat_id, text: str, keyboard: list | None = None):
@@ -178,12 +220,7 @@ class TelegramAPI:
 # --------------------------------------------------------------------------- #
 
 class Store:
-    """state.json и subscribers.json.
-
-    В subscribers.json значение — имя («Соня») или, если человек выключил
-    рассылку командой /mute, объект {"name": "Соня", "muted": true}.
-    В памяти: subscribers — chat_id -> имя, muted — множество chat_id.
-    """
+    """Подписки с раздельными настройками и поддержкой старого формата."""
 
     def __init__(self, state_file: Path = STATE_FILE,
                  subscribers_file: Path = SUBSCRIBERS_FILE):
@@ -192,23 +229,47 @@ class Store:
         self.state = {"offset": 0, "last_daily": None} | read_json(state_file, {})
         self.subscribers: dict[str, str] = {}
         self.muted: set[str] = set()
+        self.notice_overrides: dict[str, dict[str, bool]] = {}
         for chat, value in read_json(subscribers_file, {}).items():
             if isinstance(value, dict):
                 self.subscribers[chat] = value.get("name", "")
                 if value.get("muted"):
                     self.muted.add(chat)
+                overrides = {key: value[key] for key in NOTICES if isinstance(value.get(key), bool)}
+                if overrides:
+                    self.notice_overrides[chat] = overrides
             else:
                 self.subscribers[chat] = value
 
+    def enabled(self, chat_id, kind: str) -> bool:
+        chat = str(chat_id)
+        return self.notice_overrides.get(chat, {}).get(
+            kind, kind == "announcements" or chat not in self.muted)
+
     def is_muted(self, chat_id) -> bool:
-        return str(chat_id) in self.muted
+        return not any(self.enabled(chat_id, kind) for kind in ("daily", "changes"))
+
+    def set_notice(self, chat_id, kind: str, enabled: bool) -> None:
+        self.notice_overrides.setdefault(str(chat_id), {})[kind] = enabled
+
+    def announcement_recipients(self) -> list[str]:
+        return [chat for chat in self.subscribers if self.enabled(chat, "announcements")]
 
     def save(self) -> None:
-        self.muted &= set(self.subscribers)  # /stop удаляет и флаг
-        data = {chat: ({"name": name, "muted": True} if chat in self.muted else name)
-                for chat, name in self.subscribers.items()}
-        write_json(self.state_file, self.state)
+        self.muted &= self.subscribers.keys()
+        data = {}
+        for chat, name in self.subscribers.items():
+            flags = {kind: self.enabled(chat, kind) for kind in NOTICES}
+            if all(flags.values()):
+                data[chat] = name
+            elif flags == {"daily": False, "changes": False, "announcements": True}:
+                data[chat] = {"name": name, "muted": True}
+            else:
+                data[chat] = {"name": name, **flags}
+        self.notice_overrides = {chat: flags for chat, flags in self.notice_overrides.items()
+                                 if chat in self.subscribers}
         write_json(self.subscribers_file, data)
+        write_json(self.state_file, self.state)
 
 
 # --------------------------------------------------------------------------- #
@@ -399,7 +460,8 @@ class Bot:
                  schedule_loader: Callable[[], list[Rehearsal]] = load_schedule,
                  now: Callable[[], datetime] = local_now,
                  daily_hour: int = DAILY_HOUR,
-                 snapshot_file: Path = ch.SNAPSHOT_FILE):
+                 snapshot_file: Path = ch.SNAPSHOT_FILE,
+                 fresh_schedule_loader: Callable[[], list[Rehearsal]] | None = None):
         self.api = api
         self.store = store
         self.book = book
@@ -409,22 +471,33 @@ class Bot:
         self.daily_hour = daily_hour
         self.snapshot_file = snapshot_file
         self._request_now: datetime | None = None
+        self._fresh_loader = fresh_schedule_loader or schedule_loader
+        self.started_at = self.now()
+        self.last_sheet = None
+        self.last_change_check = None
+        self.last_error = None
+        self._nav = False
+        self._confirmations = {}  # одноразовые кнопки в памяти
+        self._drafts = {}         # текст объявления и ID админа только в памяти
+        self.admins = admin_ids()
 
     def today(self) -> date:
         return self.now().date()
 
     def request_now(self) -> datetime:
-        """Время, когда человек отправил сообщение (по МСК), иначе — текущее.
-
-        Бот отвечает с задержкой, а «сейчас» и «сегодня» должны быть моментом
-        вопроса, а не моментом ответа.
-        """
+        """Московское время вопроса, если Telegram его передал."""
         return self._request_now or self.now()
 
     @property
     def schedule(self) -> list[Rehearsal]:
         if self._schedule is None:
-            self._schedule = self._loader()
+            try:
+                self._schedule = self._loader()
+            except Exception:
+                self.note_error("Не удалось загрузить таблицу")
+                raise
+            if self._schedule:
+                self.last_sheet = self.now()
         return self._schedule
 
     # -- poll ------------------------------------------------------------ #
@@ -438,7 +511,7 @@ class Bot:
         try:
             self.api.call("setMyCommands", commands=TELEGRAM_COMMANDS)
         except TelegramError as e:
-            log(f"Не удалось обновить меню команд: {e}")   # попробуем в следующий раз
+            log(f"Не удалось обновить меню команд: Telegram ({e.code})")   # попробуем в следующий раз
             return
         self.store.state["commands_hash"] = digest
         self.store.save()
@@ -447,8 +520,7 @@ class Bot:
     def poll(self) -> int:
         handled = 0
         self.sync_commands()
-        if self.store.state.get("awaiting_who"):
-            self.cleanup_awaiting()      # chat_id не держим в state.json дольше суток
+        if self.cleanup_awaiting():
             self.store.save()
         while True:
             updates = self.api.call("getUpdates", offset=self.store.state["offset"],
@@ -460,11 +532,26 @@ class Bot:
                 try:
                     self.handle_update(upd)
                 except Exception as e:  # одно сломанное сообщение не блокирует очередь
-                    log(f"Ошибка обработки update: {type(e).__name__}: {e}")
+                    self.note_error(f"Ошибка обработки обновления: {type(e).__name__}")
+                    log(f"Ошибка обработки update: {type(e).__name__}")
                 self.store.state["offset"] = upd["update_id"] + 1
                 handled += 1
             self.store.save()
         return handled
+
+    def menu_buttons(self):
+        return buttons(*[tuple((label, "m:" + action) for label, action in row) for row in MENU])
+
+    def reply(self, chat_id, text, markup=None):
+        if self._nav:
+            markup = (markup or []) + buttons((BACK,))
+        parts = split_message(text)
+        for part in parts[:-1]:
+            self.api.send_message(chat_id, part)
+        if markup is None:
+            self.api.send_message(chat_id, parts[-1])
+        else:
+            self.api.send_message(chat_id, parts[-1], markup)
 
     def handle_update(self, upd: dict) -> None:
         if "callback_query" in upd:
@@ -477,15 +564,36 @@ class Bot:
             return
         chat_id = chat["id"]
         self._request_now = self._message_time(msg)
-        command = text.split()[0].split("@")[0].lower()
-        args = text.split()[1:]
-        awaiting_who = self._pop_awaiting_who(chat_id)  # любое сообщение снимает ожидание
-
-        if not text.startswith("/"):
-            if awaiting_who:
-                self.send_who(chat_id, text)
+        waiting = self._take_waiting(chat_id)
+        if text.startswith("/"):
+            head, *args = text.split()
+            self.dispatch(chat_id, head.split("@")[0].lower(), args,
+                          actor=(msg.get("from") or {}).get("id"))
+        elif waiting == "who":
+            self._with_menu(self.send_who, chat_id, text)
+        elif waiting == "find":
+            self._with_menu(self.send_find, chat_id, text)
+        elif waiting == "announcement":
+            if self._is_admin(chat_id, (msg.get("from") or {}).get("id")):
+                self.preview_announcement(chat_id, text)
+        else:
+            if waiting == "name":
+                self._with_menu(self.handle_name, chat_id, text)
             else:
                 self.handle_name(chat_id, text)
+
+    def dispatch(self, chat_id, command, args, actor=None) -> None:
+        if command == "/menu":
+            self.reply(chat_id, "Главное меню", self.menu_buttons())
+        elif command == "/settings":
+            self.send_settings(chat_id)
+        elif command == "/id":
+            self.reply(chat_id, f"Твой Telegram ID: {chat_id}")
+        elif command == "/admin":
+            if self._is_admin(chat_id, actor):
+                self.send_admin(chat_id)
+            else:
+                self.reply(chat_id, "Команда недоступна")
         elif command == "/now":
             now = self.request_now()
             self.send_at(chat_id, now.date(), now.time().replace(second=0, microsecond=0))
@@ -501,12 +609,7 @@ class Bot:
         elif command == "/start":
             self.send_welcome(chat_id)
         elif command == "/stop":
-            if self.store.subscribers.pop(str(chat_id), None) is not None:
-                self.store.save()
-                self.api.send_message(chat_id, "Твои данные удалены. "
-                                      "Чтобы подписаться снова, отправь /start.")
-            else:
-                self.api.send_message(chat_id, "Тебя нет среди подписчиков, удалять нечего.")
+            self.delete_subscription(chat_id)
         elif command in ("/today", "/tomorrow", "/week"):
             self.send_personal(chat_id, command)
         elif command == "/date":
@@ -519,51 +622,250 @@ class Bot:
             self.handle_free(chat_id, args)
         elif command in ("/mute", "/unmute"):
             self.set_muted(chat_id, command == "/mute")
-        else:                                            # /help и неизвестные команды
-            self.api.send_message(chat_id, HELP_TEXT)
+        else:
+            self.reply(chat_id, HELP_TEXT)
+
+    def _with_menu(self, action, *args) -> None:
+        self._nav = True
+        try:
+            action(*args)
+        finally:
+            self._nav = False
 
     def handle_callback(self, cq: dict) -> None:
-        try:  # бот отвечает с задержкой — старый callback Telegram может уже не принять
-            self.api.call("answerCallbackQuery", callback_query_id=cq["id"])
-        except TelegramError:
-            pass
-        message = cq.get("message") or {}
-        chat = message.get("chat") or {}
+        if cq.get("id"):
+            try:
+                self.api.call("answerCallbackQuery", callback_query_id=cq["id"])
+            except TelegramError:
+                pass
+        chat = (cq.get("message") or {}).get("chat") or {}
         if chat.get("type") != "private":
             return
         chat_id = chat["id"]
         data = cq.get("data") or ""
-
+        actor = (cq.get("from") or {}).get("id")
         self._request_now = None
-        if data.startswith("w:"):                       # /who: выбран человек
-            self._pop_awaiting_who(chat_id)
+        self.cleanup_awaiting()
+
+        if data.startswith("a:"):
+            if not self._is_admin(chat_id, actor):
+                self.reply(chat_id, "Команда недоступна")
+                return
+            self.handle_admin_callback(chat_id, data[2:])
+            return
+        if data.startswith("s:"):
+            if actor != chat_id:
+                return
+            self.handle_settings_callback(chat_id, data[2:])
+            return
+
+        self._take_waiting(chat_id)
+        if data.startswith("m:"):
+            action = data[2:]
+            if action in ("menu", "settings"):
+                self.dispatch(chat_id, "/" + action, [])
+            elif action == "find":
+                self._wait_for(chat_id, "find")
+                self.reply(chat_id, "Напиши название или его часть следующим сообщением.", buttons((BACK,)))
+            elif action in MENU_COMMANDS:
+                self._with_menu(self.dispatch, chat_id, "/" + action, [])
+        elif data.startswith("w:"):
             name = self.book.find_registration_name(self.schedule, data[2:])
             if name is None:
-                self.api.send_message(chat_id, "Это имя больше не найдено. Попробуй /who ещё раз.")
+                self.reply(chat_id, "Это имя больше не найдено. Попробуй /who ещё раз.", buttons((BACK,)))
             else:
-                self.send_who_schedule(chat_id, name)
-            return
-        if data.startswith("r:"):                       # /room: выбрана аудитория
+                self._with_menu(self.send_who_schedule, chat_id, name)
+        elif data.startswith("r:"):
             room, _, day = data[2:].partition(":")
-            self.send_room(chat_id, room, [date.fromisoformat(day)] if day else None)
-            return
-
-        # Кнопки остались только в старых сообщениях: теперь имя пишут текстом.
-        if data == "agree":
+            try:
+                days = [date.fromisoformat(day)] if day else None
+            except ValueError:
+                return
+            self._with_menu(self.send_room, chat_id, room, days)
+        elif data == "agree":
             self.send_welcome(chat_id)
         elif data.startswith("n:"):
             name = self.book.find_registration_name(self.schedule, data[2:])
             if name is None:
-                self.api.send_message(chat_id, "Это имя больше не найдено в расписании. "
-                                      "Отправь /start ещё раз.")
+                self.reply(chat_id, "Это имя больше не найдено. Отправь /start ещё раз.")
                 return
             self.store.subscribers[str(chat_id)] = name
             self.store.save()
-            self.api.send_message(chat_id, f"Готово, ты записан(а) как «{name}». "
-                                  f"Каждый вечер пришлю репетиции на завтра.\n\n{HELP_TEXT}")
+            self.reply(chat_id, f"Готово, ты записан(а) как «{name}». Уведомления можно настроить в /settings.")
+
+    def delete_subscription(self, chat_id) -> None:
+        chat = str(chat_id)
+        if self.store.subscribers.pop(chat, None) is not None:
+            self.store.save()
+            self.reply(chat_id, "Твои данные удалены. Чтобы подписаться снова, отправь /start.")
+        else:
+            self.reply(chat_id, "Тебя нет среди подписчиков, удалять нечего.")
+
+    def send_settings(self, chat_id, confirmation=""):
+        name = self.store.subscribers.get(str(chat_id))
+        rows = []
+        if name:
+            for kind, label in NOTICES.items():
+                enabled = self.store.enabled(chat_id, kind)
+                rows.append(((f"{'✅' if enabled else '❌'} {label}", "s:" + kind),))
+        rows.extend([(("Сменить имя" if name else "Указать имя", "s:name"),),
+                     (("Удалить мои данные", "s:delete"),), (BACK,)])
+        text = f"Настройки\nИмя: {name or 'не указано'}"
+        if name:
+            text += "\n\n" + "\n".join(f"{label} — {'включено' if self.store.enabled(chat_id, kind) else 'выключено'}"
+                                       for kind, label in NOTICES.items())
+        else:
+            text += "\nУкажи имя, чтобы настроить уведомления."
+        self.reply(chat_id, confirmation + text, buttons(*rows))
+
+    def _confirm(self, chat_id, action):
+        nonce = token_urlsafe(9)
+        self._confirmations[str(chat_id)] = (action, self.now().isoformat(), nonce)
+        return nonce
+
+    def _confirmed(self, chat_id, action, nonce):
+        pending = self._confirmations.get(str(chat_id))
+        if pending is None or (pending[0], pending[2]) != (action, nonce):
+            return False
+        self._confirmations.pop(str(chat_id))
+        return True
+
+    def handle_settings_callback(self, chat_id, action):
+        if action.startswith("delete:"):
+            if self._confirmed(chat_id, "delete", action.partition(":")[2]):
+                self._with_menu(self.delete_subscription, chat_id)
+            else:
+                self.reply(chat_id, "Подтверждение устарело. Открой настройки снова.", buttons((BACK,)))
+            return
+        self._take_waiting(chat_id)
+        if action in NOTICES and str(chat_id) in self.store.subscribers:
+            enabled = not self.store.enabled(chat_id, action)
+            self.store.set_notice(chat_id, action, enabled)
+            self.store.save()
+            self.send_settings(chat_id, "Уведомление включено.\n\n" if enabled else "Уведомление выключено.\n\n")
+        elif action == "name":
+            self._wait_for(chat_id, "name")
+            self.reply(chat_id, "Напиши своё имя так, как оно указано в расписании.", buttons((BACK,)))
+        elif action == "delete":
+            nonce = self._confirm(chat_id, "delete")
+            self.reply(chat_id, "Удалить имя и настройки подписки?",
+                       buttons((("Да, удалить", "s:delete:" + nonce), ("Отмена", "s:menu"))))
+        elif action == "menu":
+            self.send_settings(chat_id)
+
+    def _is_admin(self, chat_id, actor) -> bool:
+        return actor == chat_id and str(actor) in self.admins
+
+    def send_admin(self, chat_id):
+        self.reply(chat_id, "Управление ботом", buttons(*ADMIN_MENU))
+
+    def admin_reply(self, chat_id, text):
+        self.reply(chat_id, text, buttons((BACK_ADMIN,)))
+
+    def note_error(self, message):
+        self.last_error = (self.now().timestamp(), message)
+
+    def status_report(self):
+        def shown(value):
+            if isinstance(value, datetime):
+                return value.strftime("%d.%m.%Y %H:%M:%S")
+            return value or "пока нет данных"
+
+        daily = self.store.state.get("last_daily_at")
+        if daily is None and self.store.state.get("last_daily"):
+            daily = "точное время неизвестно, рассылка на " + self.store.state["last_daily"]
+        errors = (error for error in (self.last_error, getattr(self.api, "last_error", None)) if error)
+        _, error = max(errors, default=(0, "нет"))
+        return "\n".join(("Бот запущен.", f"Старт: {shown(self.started_at)}",
+                          f"Последний успешный запрос Telegram: {shown(getattr(self.api, 'last_success', None))}",
+                          f"Последняя успешная загрузка таблицы: {shown(self.last_sheet)}",
+                          f"Последняя проверка изменений: {shown(self.last_change_check)}",
+                          f"Последняя вечерняя рассылка: {shown(daily)}",
+                          f"Последняя ошибка: {error}", f"Отчёт (МСК): {shown(self.now())}"))
+
+    def statistics(self):
+        base = [f"Подписчиков: {len(self.store.subscribers)}"]
+        for kind, label in NOTICES.items():
+            count = sum(self.store.enabled(chat, kind) for chat in self.store.subscribers)
+            base.append(f"{label}: {count}")
+        counts = Counter(self.store.subscribers.values())
+        names = "\n".join(f"{name}: {count}" for name, count in sorted(counts.items()))
+        summary = "\n".join(base)
+        with_names = summary + "\n\nПо именам:\n" + names
+        return with_names if names and tg_len(with_names) <= 4000 else summary
+
+    def check_table(self):
+        try:
+            records = self._fresh_loader()
+        except Exception:
+            self.note_error("Не удалось загрузить таблицу")
+            return "Не удалось загрузить таблицу"
+        self.last_sheet = self.now()
+        dates = [record.date for record in records if record.date is not None]
+        extent = f"{min(dates):%d.%m.%Y} – {max(dates):%d.%m.%Y}" if dates else "нет дат"
+        rooms = {record.room for record in records if record.room}
+        ambiguous, unknown = name_issues(self.book, records)
+        return (f"Таблица загружена.\nЗаписей: {len(records)}\nДаты: {extent}\nАудиторий: {len(rooms)}\n"
+                f"Неоднозначные имена: {', '.join(sorted({m.name for m in ambiguous})) or 'нет'}\n"
+                f"Неизвестные имена: {', '.join(sorted({m.name for m in unknown})) or 'нет'}")
+
+    def preview_announcement(self, chat_id, text):
+        try:
+            digest = announcement_hash(text)
+        except ValueError:
+            self._wait_for(chat_id, "announcement")
+            self.admin_reply(chat_id, f"Отправь текст до {BROADCAST_CAPTION_MAX} знаков.")
+            return
+        if digest in self.store.state.get("broadcast_hashes", []):
+            self.admin_reply(chat_id, "Этот текст уже рассылался.")
+            return
+        nonce = self._confirm(chat_id, "send")
+        self._drafts[str(chat_id)] = ("preview", self.now().isoformat(), text)
+        count = len(self.store.announcement_recipients())
+        self.reply(chat_id, f"Предпросмотр объявления\nПолучателей: {count}\n\n{text}",
+                   buttons((("Отправить", "a:send:" + nonce), ("Отмена", "a:menu"))))
+
+    def handle_admin_callback(self, chat_id, action):
+        if action.startswith(("changes:", "send:")):
+            operation, _, nonce = action.partition(":")
+            if not self._confirmed(chat_id, operation, nonce):
+                self.admin_reply(chat_id, "Подтверждение устарело.")
+                return
+            if operation == "changes":
+                result = self.check_changes(details=True)
+                text = (f"Изменений: {result[0]}. Уведомлено: {result[1]}."
+                        if result is not None else "Не удалось проверить изменения. Проверь таблицу.")
+            else:
+                draft = self._drafts.pop(str(chat_id), None)
+                if not draft:
+                    self.admin_reply(chat_id, "Предпросмотр устарел.")
+                    return
+                sent, failed, duplicate = send_announcement(draft[2], self.api, self.store)
+                text = "Этот текст уже рассылался." if duplicate else f"Отправлено: {sent}. Ошибок: {failed}."
+            self.admin_reply(chat_id, text)
+            return
+
+        self._take_waiting(chat_id)
+        if action == "menu":
+            self.send_admin(chat_id)
+        elif action == "status":
+            self.admin_reply(chat_id, self.status_report())
+        elif action == "stats":
+            self.admin_reply(chat_id, self.statistics())
+        elif action == "table":
+            self.admin_reply(chat_id, self.check_table())
+        elif action == "changes":
+            nonce = self._confirm(chat_id, "changes")
+            self.reply(chat_id, "Проверка может обновить снимок и разослать уведомления. Продолжить?",
+                       buttons((("Да, проверить", "a:changes:" + nonce), ("Отмена", "a:menu"))))
+        elif action == "announcement":
+            self._wait_for(chat_id, "announcement")
+            self.reply(chat_id, "Пришли текст объявления следующим сообщением.",
+                       buttons((("Отмена", "a:menu"),)))
+
 
     def welcome_text(self, chat_id) -> str:
-        examples = "; ".join(" или ".join(g) for g in self.book.repeated_names(self.schedule))
+        examples = "; ".join(" или ".join(g) for g in self.book.repeated_names([]))
         parts = [ABOUT_TEXT, HELP_TEXT]
         current = self.store.subscribers.get(str(chat_id))
         ask = ("Чтобы начать, напиши своё имя так, как оно записано в расписании, "
@@ -578,7 +880,7 @@ class Bot:
         return "\n\n".join(parts)
 
     def send_welcome(self, chat_id) -> None:
-        self.api.send_message(chat_id, self.welcome_text(chat_id))
+        self.reply(chat_id, self.welcome_text(chat_id), self.menu_buttons())
 
     def handle_name(self, chat_id, text: str) -> None:
         """Любой текст без «/» — попытка написать своё имя."""
@@ -586,24 +888,24 @@ class Bot:
         name, candidates = self.book.resolve_typed(text, self.schedule)
         if name is not None:
             if name == current:
-                self.api.send_message(chat_id, f"Ты уже записан(а) как «{name}».")
+                self.reply(chat_id, f"Ты уже записан(а) как «{name}».")
                 return
             self.store.subscribers[str(chat_id)] = name
             self.store.save()
             verb = "Имя изменено" if current else "Готово"
-            self.api.send_message(chat_id, f"{verb}: ты записан(а) как «{name}». "
-                                  f"Каждый вечер после 21:00 пришлю репетиции на завтра."
+            self.reply(chat_id, f"{verb}: ты записан(а) как «{name}». "
+                                  f"Уведомления можно настроить в /settings."
                                   f"\n\n{HELP_TEXT}")
         elif candidates:
-            self.api.send_message(chat_id, "Это имя есть у нескольких человек: "
+            self.reply(chat_id, "Это имя есть у нескольких человек: "
                                   f"{', '.join(candidates)}. Напиши своё имя с первой "
                                   f"буквой фамилии, например «{candidates[0]}».")
         elif current:
-            self.api.send_message(chat_id, f"Не понял. Ты записан(а) как «{current}»; "
+            self.reply(chat_id, f"Не понял. Ты записан(а) как «{current}»; "
                                   f"чтобы сменить имя, напиши его так, как в расписании."
                                   f"\n\n{HELP_TEXT}")
         else:
-            self.api.send_message(chat_id, "Не нашёл такого имени среди участников. "
+            self.reply(chat_id, "Не нашёл такого имени среди участников. "
                                   "Напиши имя так, как оно записано в расписании, "
                                   "например: Соня или Миша К.")
 
@@ -627,33 +929,56 @@ class Bot:
         now = self.now()
         if (started.tzinfo is None) != (now.tzinfo is None):
             started, now = started.replace(tzinfo=None), now.replace(tzinfo=None)
-        return now - started > AWAIT_WHO_TTL
+        return now - started >= INPUT_TTL
 
-    def _pop_awaiting_who(self, chat_id) -> bool:
-        """Ждали ли от этого чата имя после /who. Ожидание снимается в любом случае,
-        просроченные записи чистятся; пустой словарь в state.json не хранится."""
-        waiting: dict = self.store.state.get("awaiting_who") or {}
-        since = waiting.pop(str(chat_id), None)
-        self.cleanup_awaiting()
-        return since is not None and not self._expired(since)
-
-    def cleanup_awaiting(self) -> None:
-        """Удаляет просроченные ожидания /who; пустой словарь в state.json не хранится."""
-        waiting: dict = self.store.state.get("awaiting_who") or {}
-        for chat, started in list(waiting.items()):
-            if self._expired(started):
-                waiting.pop(chat)
-        if waiting:
-            self.store.state["awaiting_who"] = waiting
+    def _wait_for(self, chat_id, kind: str) -> None:
+        started = self.now().isoformat(timespec="seconds")
+        if kind == "announcement":
+            self._drafts[str(chat_id)] = ("input", started, "")
+        elif kind == "who":
+            self.store.state.setdefault("awaiting_who", {})[str(chat_id)] = started
+            self.store.save()
         else:
-            self.store.state.pop("awaiting_who", None)
+            self.store.state.setdefault("awaiting_input", {})[str(chat_id)] = {
+                "kind": kind, "since": started}
+            self.store.save()
+
+    def _take_waiting(self, chat_id) -> str | None:
+        chat = str(chat_id)
+        self.cleanup_awaiting()
+        private = self._drafts.pop(chat, None)
+        self._confirmations.pop(chat, None)
+        pending = self.store.state.get("awaiting_input", {}).pop(chat, None)
+        who = self.store.state.get("awaiting_who", {}).pop(chat, None)
+        self.cleanup_awaiting()
+        if private and private[0] == "input":
+            return "announcement"
+        return pending["kind"] if pending else "who" if who else None
+
+    def cleanup_awaiting(self) -> bool:
+        changed = False
+        for key in ("awaiting_who", "awaiting_input"):
+            waiting = self.store.state.get(key, {})
+            for chat, item in list(waiting.items()):
+                since = item.get("since") if isinstance(item, dict) else item
+                if self._expired(since):
+                    waiting.pop(chat)
+                    changed = True
+            if key in self.store.state and not waiting:
+                self.store.state.pop(key)
+                changed = True
+        for pending in (self._drafts, self._confirmations):
+            for chat, (_, since, _) in list(pending.items()):
+                if self._expired(since):
+                    pending.pop(chat)
+        return changed
 
     def send_at(self, chat_id, day: date, at: time) -> None:
         items = running_at(self.schedule, day, at)
         if not items:
-            self.api.send_message(chat_id, NOTHING_AT_TIME)
+            self.reply(chat_id, NOTHING_AT_TIME)
             return
-        self.api.send_message(chat_id, format_block(
+        self.reply(chat_id, format_block(
             f"РЕПЕТИЦИИ {day:%d.%m.%y} В {at:%H:%M}:", items))
 
     def handle_at(self, chat_id, args: list[str]) -> None:
@@ -665,17 +990,14 @@ class Bot:
         at = parse_hhmm(time_tok)
         day = parse_ddmm(rest[0], today) if rest else today
         if at is None or day is None or len(args) > 2:
-            self.api.send_message(chat_id, "Напиши время так: /at 16:30 или /at 16:30 17.11")
+            self.reply(chat_id, "Напиши время так: /at 16:30 или /at 16:30 17.11")
             return
         self.send_at(chat_id, day, at)
 
     def ask_who(self, chat_id) -> None:
         names = self.book.registration_names(self.schedule)
-        waiting = self.store.state.get("awaiting_who") or {}
-        waiting[str(chat_id)] = self.now().isoformat(timespec="seconds")
-        self.store.state["awaiting_who"] = waiting
-        self.store.save()
-        self.api.send_message(
+        self._wait_for(chat_id, "who")
+        self.reply(
             chat_id, "Чьё расписание показать? Нажми имя или напиши его следующим сообщением.",
             keyboard([{"text": n, "callback_data": "w:" + self.book.key(n)} for n in names]))
 
@@ -684,12 +1006,12 @@ class Bot:
         if name is not None:
             self.send_who_schedule(chat_id, name)
         elif candidates:
-            self.api.send_message(
+            self.reply(
                 chat_id, "Это имя есть у нескольких человек. Кого показать?",
                 keyboard([{"text": n, "callback_data": "w:" + self.book.key(n)}
                           for n in candidates]))
         else:
-            self.api.send_message(chat_id, "Не нашёл такого имени среди участников. "
+            self.reply(chat_id, "Не нашёл такого имени среди участников. "
                                   "Отправь /who без имени, чтобы увидеть список.")
 
     def send_who_schedule(self, chat_id, name: str) -> None:
@@ -697,7 +1019,7 @@ class Bot:
         blocks = [format_block(f"РАСПИСАНИЕ {name} {d:%d.%m.%y}:",
                                rehearsals_for(name, d, self.schedule, self.book))
                   for d in (today, today + timedelta(days=1))]
-        self.api.send_message(chat_id, "\n\n".join(blocks))
+        self.reply(chat_id, "\n\n".join(blocks))
 
     def rooms(self) -> list[str]:
         rooms = {r.room for r in self.schedule if r.room}
@@ -710,10 +1032,10 @@ class Bot:
         if room is None:
             rooms = self.rooms()
             if not rooms:
-                self.api.send_message(chat_id, "В расписании пока нет аудиторий.")
+                self.reply(chat_id, "В расписании пока нет аудиторий.")
                 return
             suffix = f":{day.isoformat()}" if day else ""
-            self.api.send_message(chat_id, "Какая аудитория?", keyboard(
+            self.reply(chat_id, "Какая аудитория?", keyboard(
                 [{"text": r, "callback_data": f"r:{r}{suffix}"} for r in rooms]))
             return
         self.send_room(chat_id, room, [day] if day else None)
@@ -721,7 +1043,7 @@ class Bot:
     def send_room(self, chat_id, room: str, days: list[date] | None) -> None:
         room = room.strip()
         if room not in self.rooms():
-            self.api.send_message(chat_id, f"Аудитории «{room}» нет в расписании. "
+            self.reply(chat_id, f"Аудитории «{room}» нет в расписании. "
                                   f"Есть: {', '.join(self.rooms()) or '—'}.")
             return
         if days is None:
@@ -730,12 +1052,12 @@ class Bot:
         blocks = [format_block(f"АУДИТОРИЯ {room} {d:%d.%m.%y}:",
                                [r for r in self.schedule if r.date == d and r.room == room])
                   for d in days]
-        self.api.send_message(chat_id, "\n\n".join(blocks))
+        self.reply(chat_id, "\n\n".join(blocks))
 
     def send_find(self, chat_id, query: str) -> None:
         query = query.strip()
         if not query:
-            self.api.send_message(chat_id, "Напиши часть названия: /find эрнест")
+            self.reply(chat_id, "Напиши часть названия: /find эрнест")
             return
         # каждое слово запроса — часть названия, порядок не важен:
         # «триумф муз» находит «Триумф любви муз (Овчинникова)»
@@ -745,38 +1067,38 @@ class Bot:
                  if all(w in normalize(r.title) for w in words) and not ended(r, now)]
         found.sort(key=lambda r: (r.date, *_by_time(r)))
         if not found:
-            self.api.send_message(chat_id, f"Ничего не нашёл по «{query}» на ближайшие дни.")
+            self.reply(chat_id, f"Ничего не нашёл по «{query}» на ближайшие дни.")
             return
         shown = found[:FIND_LIMIT]
         blocks = [format_block(f"{d:%d.%m.%y}:", [r for r in shown if r.date == d])
                   for d in sorted({r.date for r in shown})]
         more = (f"\n\nи ещё {len(found) - len(shown)} — уточни название"
                 if len(found) > len(shown) else "")
-        self.api.send_message(chat_id, f"НАЙДЕНО «{query}»:\n\n" + "\n\n".join(blocks) + more)
+        self.reply(chat_id, f"НАЙДЕНО «{query}»:\n\n" + "\n\n".join(blocks) + more)
 
     def handle_free(self, chat_id, args: list[str]) -> None:
         today = self.request_now().date()
         day = next((d for d in (parse_ddmm(a, today) for a in args) if d), None)
         rest = [a for a in args if parse_ddmm(a, today) is None]
         if len(rest) > 1:
-            self.api.send_message(chat_id, "Напиши так: /free, /free 301 или /free 301 18.11")
+            self.reply(chat_id, "Напиши так: /free, /free 301 или /free 301 18.11")
             return
         rooms = self.rooms()
         if rest and rest[0] not in rooms:
-            self.api.send_message(chat_id, f"Аудитории «{rest[0]}» нет в расписании. "
+            self.reply(chat_id, f"Аудитории «{rest[0]}» нет в расписании. "
                                   f"Есть: {', '.join(rooms) or '—'}.")
             return
         days = [day] if day else [today, today + timedelta(days=1)]
         blocks = [format_free(room, d, self.schedule)
                   for room in (rest or rooms) for d in days]
-        self.api.send_message(chat_id, "\n\n".join(blocks) or "В расписании пока нет аудиторий.")
+        self.reply(chat_id, "\n\n".join(blocks) or "В расписании пока нет аудиторий.")
 
     # -- личные команды ------------------------------------------------- #
 
     def _need_name(self, chat_id) -> str | None:
         name = self.store.subscribers.get(str(chat_id))
         if not name:
-            self.api.send_message(chat_id, "Сначала напиши мне своё имя (подробнее — /start).")
+            self.reply(chat_id, "Сначала напиши мне своё имя (подробнее — /start).")
         return name
 
     def handle_date(self, chat_id, args: list[str]) -> None:
@@ -785,11 +1107,11 @@ class Bot:
             return
         day = parse_ddmm(args[0], self.request_now().date()) if len(args) == 1 else None
         if day is None:
-            self.api.send_message(chat_id, "Напиши дату так: /date 18.11")
+            self.reply(chat_id, "Напиши дату так: /date 18.11")
             return
         items = rehearsals_for(name, day, self.schedule, self.book)
         if not items:
-            self.api.send_message(chat_id, f"{name}, на {day:%d.%m.%y} репетиций нет.")
+            self.reply(chat_id, f"{name}, на {day:%d.%m.%y} репетиций нет.")
             return
         self._deliver_day(chat_id, name, day, format_day(day, items))
 
@@ -801,7 +1123,7 @@ class Bot:
         mine = [r for r in self.schedule
                 if r.date is not None and self.book.matches(name, r) and not ended(r, now)]
         if not mine:
-            self.api.send_message(chat_id, f"{name}, ближайших репетиций нет.")
+            self.reply(chat_id, f"{name}, ближайших репетиций нет.")
             return
         first = min(mine, key=lambda r: (r.date, *_by_time(r)))
         # параллельные — все, что начинаются тогда же
@@ -812,19 +1134,20 @@ class Bot:
             title = "БЛИЖАЙШАЯ РЕПЕТИЦИЯ СЕГОДНЯ:"
         else:
             title = f"БЛИЖАЙШАЯ РЕПЕТИЦИЯ {first.date:%d.%m.%y}:"
-        self.api.send_message(chat_id, format_block(title, same))
+        self.reply(chat_id, format_block(title, same))
 
     def set_muted(self, chat_id, muted: bool) -> None:
         if not self._need_name(chat_id):
             return
         chat = str(chat_id)
-        if muted == self.store.is_muted(chat):
-            self.api.send_message(chat_id, "Рассылка и уведомления уже выключены. Включить — /unmute."
+        if all(self.store.enabled(chat, kind) != muted for kind in ("daily", "changes")):
+            self.reply(chat_id, "Рассылка и уведомления уже выключены. Включить — /unmute."
                                   if muted else "Рассылка и уведомления уже включены.")
             return
-        (self.store.muted.add if muted else self.store.muted.discard)(chat)
+        for kind in ("daily", "changes"):
+            self.store.set_notice(chat, kind, not muted)
         self.store.save()
-        self.api.send_message(
+        self.reply(
             chat_id,
             "Вечерняя рассылка и уведомления об изменениях выключены. Команды /today, "
             "/next и другие работают как обычно. Включить снова — /unmute."
@@ -834,7 +1157,7 @@ class Bot:
     def send_personal(self, chat_id, command: str) -> None:
         name = self.store.subscribers.get(str(chat_id))
         if not name:
-            self.api.send_message(chat_id, "Сначала зарегистрируйся: /start")
+            self.reply(chat_id, "Сначала зарегистрируйся: /start")
             return
         today = self.request_now().date()
         days = {"/today": [today], "/tomorrow": [today + timedelta(days=1)],
@@ -847,10 +1170,10 @@ class Bot:
         if not blocks:
             period = {"/today": "сегодня", "/tomorrow": "завтра",
                       "/week": "в ближайшие 7 дней"}[command]
-            self.api.send_message(chat_id, f"{name}, {period} репетиций нет.")
+            self.reply(chat_id, f"{name}, {period} репетиций нет.")
             return
         if command == "/week":                          # картинка — только для одного дня
-            self.api.send_message(chat_id, "\n\n".join(blocks))
+            self.reply(chat_id, "\n\n".join(blocks))
         else:
             self._deliver_day(chat_id, name, days[0], blocks[0])
 
@@ -872,8 +1195,8 @@ class Bot:
             return 0
         sent = failed = 0
         for chat_id, name in list(self.store.subscribers.items()):
-            if self.store.is_muted(chat_id):
-                continue                                 # /mute
+            if not self.store.enabled(chat_id, "daily"):
+                continue
             items = rehearsals_for(name, day, self.schedule, self.book)
             if not items:
                 continue
@@ -882,6 +1205,7 @@ class Bot:
             else:
                 failed += 1
         self.store.state["last_daily"] = day.isoformat()
+        self.store.state["last_daily_at"] = self.now().isoformat(timespec="seconds")
         self.store.save()
         log(f"Рассылка на {day:%d.%m.%y}: отправлено {sent}, ошибок {failed}")
         return sent
@@ -892,7 +1216,7 @@ class Bot:
             from render_image import render_schedule_image
             return render_schedule_image(day, name, self.schedule, self.now(), book=self.book)
         except Exception as e:  # noqa: BLE001 — картинка не должна мешать тексту
-            log(f"Картинка не нарисована: {type(e).__name__}: {e}")
+            log(f"Картинка не нарисована: {type(e).__name__}")
             return None
 
     def _deliver_day(self, chat_id, name: str, day: date, text: str) -> bool:
@@ -909,47 +1233,51 @@ class Bot:
         if png is not None:
             caption = text if tg_len(text) <= CAPTION_LIMIT else None
             try:
+                markup = {"keyboard": buttons((BACK,))} if self._nav and caption else {}
                 send_photo(int(chat_id), png, filename=f"schedule-{day:%Y-%m-%d}.png",
-                           caption=caption)
+                           caption=caption, **markup)
                 if caption is not None:
                     return True                      # всё в одном сообщении
             except TelegramError as e:
                 if e.code == 403:                    # бот заблокирован — текст тоже не дойдёт
                     self.store.subscribers.pop(chat_id, None)
-                    log(f"Не удалось отправить сообщение: {e}")
+                    log(f"Не удалось отправить сообщение: Telegram ({e.code})")
                     return False
-                log(f"Картинка не отправлена: {e}")
+                log(f"Картинка не отправлена: Telegram ({e.code})")
             except Exception as e:  # noqa: BLE001
-                log(f"Картинка не отправлена: {type(e).__name__}: {e}")
+                log(f"Картинка не отправлена: {type(e).__name__}")
         return self._deliver(chat_id, text)
 
     def _deliver(self, chat_id: str, text: str) -> bool:
         try:
             for part in split_message(text):
-                self.api.send_message(int(chat_id), part)
+                self.reply(int(chat_id), part)
             return True
         except TelegramError as e:
             if e.code == 403:  # пользователь заблокировал бота — удаляем данные
                 self.store.subscribers.pop(chat_id, None)
-            log(f"Не удалось отправить сообщение: {e}")
+            log(f"Не удалось отправить сообщение: Telegram ({e.code})")
             return False
 
     # -- изменения в расписании ----------------------------------------- #
 
-    def check_changes(self) -> int:
+    def check_changes(self, *, details: bool = False) -> int | tuple[int, int] | None:
         """Сравнивает таблицу со снимком и уведомляет затронутых подписчиков.
 
         Таблица не скачалась или пустая — ничего не делаем и снимок не трогаем.
         Снимка нет (первый запуск) — только создаём его.
         """
+        self.last_change_check = self.now()
         try:
             current = self.schedule
         except Exception as e:
             log(f"Таблица не скачалась ({type(e).__name__}), изменения не проверяю")
-            return 0
+            self.note_error("Не удалось загрузить таблицу для проверки изменений")
+            return None if details else 0
         if not current:
             log("Таблица пришла пустой, изменения не проверяю")
-            return 0
+            self.note_error("Таблица пуста")
+            return None if details else 0
 
         today = self.today()
         new = ch.upcoming(current, today)
@@ -958,26 +1286,30 @@ class Bot:
             ch.save_snapshot(new, self.snapshot_file)
             log(f"Создан снимок расписания ({len(new)} записей) — первый запуск "
                 f"или сменилась вкладка таблицы; уведомлений нет")
-            return 0
+            return (0, 0) if details else 0
 
         changes = ch.diff(ch.upcoming(old, today), new, self.book)
         sent = 0
         if changes:
             for chat_id, name in list(self.store.subscribers.items()):
-                if self.store.is_muted(chat_id):
-                    continue                             # /mute
+                if not self.store.enabled(chat_id, "changes"):
+                    continue
                 mine = [c for c in changes if ch.affected(c, name, self.book)]
                 if mine and self._deliver(chat_id, format_changes(mine)):
                     sent += 1
             self.store.save()
         ch.save_snapshot(new, self.snapshot_file)
         log(f"Изменений в расписании: {len(changes)}, уведомлено подписчиков: {sent}")
-        return sent
+        return (len(changes), sent) if details else sent
 
 
 # --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
+
+def name_issues(book, schedule):
+    return book.ambiguous(schedule), book.unknown(schedule)
+
 
 def check_names() -> int:
     """Печатает всё, что требует ручной проверки. Код выхода 1, если есть что проверять."""
@@ -989,14 +1321,13 @@ def check_names() -> int:
     def where(r: Rehearsal) -> str:
         return f"{r.date:%d.%m.%y} {format_time(r)} {r.title}, ауд. {r.room}"
 
-    mentions = book.ambiguous(schedule)
+    mentions, unknown = name_issues(book, schedule)
     if mentions:
         problems += 1
         print("\nНЕОДНОЗНАЧНЫЕ — имя без буквы фамилии (рассылки по нему нет):")
         for m in mentions:
             print(f"  «{m.name}»: {where(m.rehearsal)} — возможно: {' / '.join(m.candidates)}")
 
-    unknown = book.unknown(schedule)
     if unknown:
         problems += 1
         print("\nНЕПОНЯТНЫЕ — не человек из people.json и не группа (рассылки по ним нет).\n"
@@ -1029,7 +1360,7 @@ class DryRunAPI:
         return True
 
     def send_photo(self, chat_id, png: bytes, filename: str = "schedule.png",
-                   caption: str | None = None):
+                   caption: str | None = None, keyboard: list | None = None):
         OUT_DIR.mkdir(exist_ok=True)
         path = OUT_DIR / f"dry-run-{chat_id}-{filename}"
         path.write_bytes(png)
@@ -1084,10 +1415,10 @@ PROFILE_DESCRIPTION = """Расписание репетиций вашего к
 
 Что умею:
 • каждый вечер в 21:00 присылаю ваше расписание на завтра: картинка-сетка и текст
-• сразу сообщаю, если в таблице что-то поменялось
+• проверяю изменения в таблице и сообщаю о них
 • отвечаю на команды: что идёт сейчас, расписание друга, репетиции в аудитории
 
-Нажмите «Начать» и выберите своё имя."""
+Нажмите «Начать», напишите своё имя и откройте /menu. Уведомления можно изменить в /settings."""
 PROFILE_LIMITS = {"name": 64, "short_description": 120, "description": 512}
 
 
@@ -1129,7 +1460,7 @@ def setup_profile(apply: bool, api=None) -> int:
             print(f"{method}: готово")
         except TelegramError as e:      # например, лимит частоты для setMyName
             failed += 1
-            print(f"{method}: не удалось — {e}")
+            print(f"{method}: не удалось — код Telegram {e.code}")
     return 1 if failed else 0
 
 
@@ -1138,67 +1469,109 @@ BROADCAST_CAPTION_MAX = 1024       # лимит Telegram для подписи �
 BROADCAST_PAUSE = 0.1              # секунд между отправками
 
 
+def announcement_hash(text: str) -> str:
+    if not text or tg_len(text) > BROADCAST_CAPTION_MAX:
+        raise ValueError("Пустое или слишком длинное объявление")
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def send_announcement(text: str, api, store: Store, *, force: bool = False,
+                      banner: bytes | None = None,
+                      sleep: Callable[[float], None] | None = None) -> tuple[int, int, bool]:
+    """Общая отправка для CLI и панели. В журнале только счётчики."""
+    import time as time_module
+
+    digest = announcement_hash(text)
+    hashes = store.state.get("broadcast_hashes", [])
+    already = digest in hashes
+    if already and not force:
+        return 0, 0, True
+    recipients = store.announcement_recipients()
+    if not recipients:
+        return 0, 0, False
+    if banner is None:
+        from render_banner import BANNER_FILE
+        if BANNER_FILE.is_file():
+            try:
+                banner = BANNER_FILE.read_bytes()
+            except OSError:
+                pass
+    sleep = sleep or time_module.sleep
+    sent = failed = 0
+    uncertain = False
+    # Reserve before the first send so a process interruption cannot duplicate a partial broadcast.
+    if not already:
+        store.state["broadcast_hashes"] = [*hashes, digest]
+        store.save()
+    try:
+        for i, chat in enumerate(recipients):
+            if i:
+                sleep(BROADCAST_PAUSE)
+            try:
+                send_photo = getattr(api, "send_photo", None)
+                if banner and send_photo:
+                    try:
+                        send_photo(int(chat), banner, filename="update.png", caption=text)
+                        sent += 1
+                        continue
+                    except TelegramError as e:
+                        if e.code in (None, 403):
+                            raise
+                send_text = getattr(api, "send_message", None)
+                if send_text is None:
+                    failed += 1
+                    continue
+                send_text(int(chat), text)
+                sent += 1
+            except TelegramError as e:
+                failed += 1
+                if e.code is None:
+                    uncertain = True
+                if e.code == 403:
+                    store.subscribers.pop(chat, None)
+    except BaseException:
+        uncertain = True
+        raise
+    finally:
+        if not already and not sent and not uncertain:
+            if hashes:
+                store.state["broadcast_hashes"] = hashes
+            else:
+                store.state.pop("broadcast_hashes", None)
+        store.save()
+        log(f"Объявление: отправлено {sent}, не удалось {failed}")
+    return sent, failed, False
+
+
 def broadcast(send: bool, force: bool, api=None, store: Store | None = None,
               text_file: Path = BROADCAST_FILE, banner: bytes | None = None,
-              sleep: Callable[[float], None] = None) -> int:
-    """Разовое объявление всем подписчикам (и тем, у кого /mute):
-    одно сообщение — sendPhoto с баннером и текстом в подписи.
-
-    send=False — проверка: текст, длина, число получателей; ничего не отправляется.
-    Повтор того же текста блокируется хэшем в state.json (broadcast_hashes),
-    force=True разрешает отправить ещё раз. В лог — только счётчики.
-    """
-    import time as time_module
-    sleep = sleep or time_module.sleep
+              sleep: Callable[[float], None] | None = None) -> int:
+    """Объявление из файла. Без send показывает предварительный просмотр."""
     store = store or Store()
     text = text_file.read_text(encoding="utf-8").strip()
-    length = tg_len(text)
-    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
-    already = digest in store.state.get("broadcast_hashes", [])
-    recipients = list(store.subscribers)
-
     print("----- текст объявления -----")
     print(text)
     print("----------------------------")
-    print(f"Длина: {length} из {BROADCAST_CAPTION_MAX} (как считает Telegram)")
-    print(f"Получателей: {len(recipients)} (включая тех, у кого /mute)")
-    if already:
-        print("Этот текст уже рассылался" + (" — force: отправлю ещё раз" if force else ""))
-    if not text or length > BROADCAST_CAPTION_MAX:
+    print(f"Длина: {tg_len(text)} из {BROADCAST_CAPTION_MAX} (как считает Telegram)")
+    print(f"Получателей: {len(store.announcement_recipients())}")
+    try:
+        digest = announcement_hash(text)
+    except ValueError:
         print("Ошибка: текст пустой или длиннее лимита подписи — не отправляю")
         return 2
+    already = digest in store.state.get("broadcast_hashes", [])
+    if already:
+        print("Этот текст уже рассылался" + (" — force: отправлю ещё раз" if force else ""))
     if not send:
         print("Режим проверки: ничего не отправлено (для отправки — send=true)")
         return 0
     if already and not force:
         print("Повтор не отправляю. Чтобы отправить ещё раз, включи force.")
         return 0
-
-    if banner is None:
-        from render_banner import BANNER_FILE, render_banner
-        banner = BANNER_FILE.read_bytes() if BANNER_FILE.exists() else render_banner()
     api = api or TelegramAPI(os.environ.get("TELEGRAM_BOT_TOKEN", ""))
-    sent = failed = 0
-    try:
-        for i, chat in enumerate(recipients):
-            if i:
-                sleep(BROADCAST_PAUSE)
-            try:
-                api.send_photo(int(chat), banner, filename="update.png", caption=text)
-                sent += 1
-            except TelegramError as e:
-                failed += 1
-                if e.code == 403:                # заблокировал бота — удаляем, как в рассылке
-                    store.subscribers.pop(chat, None)
-    finally:
-        if sent:
-            hashes = store.state.get("broadcast_hashes", [])
-            if digest not in hashes:
-                hashes.append(digest)
-            store.state["broadcast_hashes"] = hashes
-        store.save()
-        log(f"Объявление: отправлено {sent}, не удалось {failed}")
+    send_announcement(text, api, store, force=force, banner=banner, sleep=sleep)
     return 0
+
 
 
 def save_image(args: list[str]) -> int:
@@ -1282,7 +1655,7 @@ def main(argv: list[str]) -> int:
     elif opts.mode == "run":
         bot.send_daily()  # сам решит, пора ли (с 21:00 и ещё не отправлено)
     if opts.dry_run:
-        log(f"[dry-run] подписчики после запуска: {store.subscribers}")
+        log(f"[dry-run] всего подписчиков после запуска: {len(store.subscribers)}")
     return 0
 
 
@@ -1293,5 +1666,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main(sys.argv))
     except TelegramError as e:
-        log(f"Ошибка Telegram: {e}")
+        log(f"Ошибка Telegram: код {e.code}")
         sys.exit(1)
